@@ -4,19 +4,19 @@ This directory is the authoritative design source for the simulated social lamp.
 
 ## Status
 
-All documents are complete drafts awaiting user review. Implementation planning begins only after the set is approved.
+All documents were reviewed and approved on 2026-07-04. The design set is frozen as the baseline for TDD implementation planning; later design changes require a documented amendment.
 
 | Order | Document | Depends on | Status |
 | --- | --- | --- | --- |
-| 1 | [Overall system design](01-overall-system-design.md) | Challenge brief | Awaiting review |
-| 2 | [Events, world model, and observability](02-events-world-model-observability.md) | 1 | Awaiting review |
-| 3 | [Engagement perception](03-engagement-perception.md) | 1-2 | Awaiting review |
-| 4 | [Object perception and memory](04-object-perception-memory.md) | 1-2 | Awaiting review |
-| 5 | [Behavior and adaptive preferences](05-behavior-adaptive-preferences.md) | 1-4 | Awaiting review |
-| 6 | [Output compositor and adapters](06-output-compositor-adapters.md) | 1-2, 5 | Awaiting review |
-| 7 | [Conversation and audio intelligence](07-conversation-audio-intelligence.md) | 1-6 | Awaiting review |
-| 8 | [Simulator and dashboard](08-simulator-dashboard.md) | 1-7 | Awaiting review |
-| 9 | [Evaluation and delivery](09-evaluation-delivery.md) | 1-8 | Awaiting review |
+| 1 | [Overall system design](01-overall-system-design.md) | Challenge brief | Approved |
+| 2 | [Events, world model, and observability](02-events-world-model-observability.md) | 1 | Approved |
+| 3 | [Engagement perception](03-engagement-perception.md) | 1-2 | Approved |
+| 4 | [Object perception and memory](04-object-perception-memory.md) | 1-2 | Approved |
+| 5 | [Behavior and adaptive preferences](05-behavior-adaptive-preferences.md) | 1-4 | Approved |
+| 6 | [Output compositor and adapters](06-output-compositor-adapters.md) | 1-2, 5 | Approved |
+| 7 | [Conversation and audio intelligence](07-conversation-audio-intelligence.md) | 1-6 | Approved |
+| 8 | [Simulator and dashboard](08-simulator-dashboard.md) | 1-7 | Approved |
+| 9 | [Evaluation and delivery](09-evaluation-delivery.md) | 1-8 | Approved |
 
 ## Dependency Rules
 
