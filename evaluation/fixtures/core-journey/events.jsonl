@@ -1,0 +1,8 @@
+{"body":{"revision":0,"social_state":"idle"},"record_type":"snapshot","recorded_at_mono_ns":0,"sequence":1}
+{"body":{"revision":1,"social_state":"candidate"},"record_type":"snapshot","recorded_at_mono_ns":1000000000,"sequence":2}
+{"body":{"revision":2,"social_state":"engaged"},"record_type":"snapshot","recorded_at_mono_ns":2000000000,"sequence":3}
+{"body":{"revision":3,"social_state":"disengaged"},"record_type":"snapshot","recorded_at_mono_ns":3000000000,"sequence":4}
+{"body":{"kind":"seek_attention","level":1},"record_type":"intent","recorded_at_mono_ns":8000000000,"sequence":5}
+{"body":{"observation_id":"observation-core-keys-2","label":"keys","horizontal_region":"right","anchor_name":"desk"},"record_type":"memory","recorded_at_mono_ns":9000000000,"sequence":6}
+{"body":{"query":"Where are my keys?","status":"found","evidence_ids":["observation-core-keys-2"]},"record_type":"memory_result","recorded_at_mono_ns":10000000000,"sequence":7}
+{"body":{"duration_ms":700,"kind":"recall"},"record_type":"timeline","recorded_at_mono_ns":11000000000,"sequence":8}

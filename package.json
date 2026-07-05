@@ -5,6 +5,6 @@
     "dev:web": "pnpm --dir frontend dev",
     "test:web": "pnpm --dir frontend test -- --run",
     "typecheck:web": "pnpm --dir frontend exec tsc --noEmit",
-    "e2e": "pnpm --dir frontend exec playwright test"
+    "e2e": "pnpm --dir frontend exec playwright test --config playwright.config.ts"
   }
 }
