@@ -1,0 +1,1 @@
+"""Event fan-out infrastructure."""
