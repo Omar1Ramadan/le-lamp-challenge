@@ -53,9 +53,7 @@ class TraceWriter:
         if not self._opened:
             raise RuntimeError("trace writer is not open")
         record = TraceRecord(len(self._records) + 1, record_type, mono_ns, body)
-        self._records.append(
-            json.dumps(asdict(record), sort_keys=True, separators=(",", ":"))
-        )
+        self._records.append(json.dumps(asdict(record), sort_keys=True, separators=(",", ":")))
 
     async def close(self) -> None:
         content = "\n".join(self._records) + "\n"
@@ -85,9 +83,7 @@ class TraceReader:
 
     def records(self) -> Iterator[TraceRecord]:
         self.manifest()
-        for line in (self._directory / "events.jsonl").read_text(
-            encoding="utf-8"
-        ).splitlines():
+        for line in (self._directory / "events.jsonl").read_text(encoding="utf-8").splitlines():
             yield TraceRecord(**json.loads(line))
 
     def read(self) -> ReplayTrace:

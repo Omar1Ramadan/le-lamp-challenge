@@ -39,11 +39,12 @@ def test_speech_during_simulator_audio_cancels_and_listens() -> None:
 
 def test_anonymous_speaker_below_threshold_is_uncertain() -> None:
     scorer = ActiveSpeakerScorer(threshold=0.65)
-    assert scorer.associate(
-        {
-            "person-1": {"mouth_correlation": 0.45, "visual_plausibility": 0.5, "continuity": 0.2}
-        }
-    ) is None
+    assert (
+        scorer.associate(
+            {"person-1": {"mouth_correlation": 0.45, "visual_plausibility": 0.5, "continuity": 0.2}}
+        )
+        is None
+    )
 
 
 def test_affect_confidence_below_point_60_is_discarded() -> None:

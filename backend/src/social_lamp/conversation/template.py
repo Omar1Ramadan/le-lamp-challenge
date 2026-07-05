@@ -45,9 +45,7 @@ class TemplateConversationProvider:
         location = " ".join(
             part
             for part in (
-                f"on the {result.horizontal_region} side"
-                if result.horizontal_region
-                else "",
+                f"on the {result.horizontal_region} side" if result.horizontal_region else "",
                 f"of the {result.anchor_name}" if result.anchor_name else "",
             )
             if part

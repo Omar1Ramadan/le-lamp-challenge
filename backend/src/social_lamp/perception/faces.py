@@ -54,9 +54,7 @@ class MediaPipeFaceAdapter:
     def __init__(self, *, landmarker: FaceLandmarker) -> None:
         self._landmarker = landmarker
 
-    def process(
-        self, frame: CapturedFrame, *, now_mono_ns: int
-    ) -> tuple[FaceResult, ...]:
+    def process(self, frame: CapturedFrame, *, now_mono_ns: int) -> tuple[FaceResult, ...]:
         if now_mono_ns - frame.mono_ns > MAX_FRAME_AGE_NS:
             return ()
         return tuple(self._landmarker.detect(frame.image))

@@ -26,8 +26,6 @@ def locate_box(box: BBox, *, anchors: dict[str, BBox]) -> SceneLocation:
     area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
     depth = "foreground" if area >= 0.20 else "midground" if area >= 0.06 else "background"
     candidates = [
-        name
-        for name, anchor in anchors.items()
-        if _intersection_over_box(box, anchor) >= 0.50
+        name for name, anchor in anchors.items() if _intersection_over_box(box, anchor) >= 0.50
     ]
     return SceneLocation(horizontal, depth, sorted(candidates)[0] if candidates else None)

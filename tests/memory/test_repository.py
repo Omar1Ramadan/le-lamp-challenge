@@ -44,9 +44,7 @@ async def test_alias_lookup_precedes_canonical_lookup(tmp_path: Path) -> None:
 async def test_session_scope_and_before_utc_filter_results(tmp_path: Path) -> None:
     repository = await MemoryRepository.open(tmp_path / "memory.db")
     await repository.record(
-        ObservationWrite.example(
-            "keys", "left", session_id="session-a", observed_at_mono_ns=10
-        )
+        ObservationWrite.example("keys", "left", session_id="session-a", observed_at_mono_ns=10)
     )
     scoped = await repository.record(
         ObservationWrite.example(

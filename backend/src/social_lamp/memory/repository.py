@@ -320,7 +320,7 @@ class MemoryRepository:
         cursor = await self._connection.execute(
             f"""
             SELECT * FROM observations
-            WHERE {' AND '.join(clauses)}
+            WHERE {" AND ".join(clauses)}
             ORDER BY observed_at_mono_ns DESC
             LIMIT 1
             """,

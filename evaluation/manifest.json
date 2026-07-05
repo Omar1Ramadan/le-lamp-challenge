@@ -6,6 +6,12 @@
       "path": "evaluation/fixtures/core-engagement",
       "kind": "event_replay",
       "sample_only": true
+    },
+    {
+      "name": "core-journey",
+      "path": "evaluation/fixtures/core-journey",
+      "kind": "event_replay",
+      "sample_only": true
     }
   ],
   "core_gates": {
