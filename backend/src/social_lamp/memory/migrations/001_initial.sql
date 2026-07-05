@@ -53,6 +53,16 @@ CREATE TABLE behavior_preferences(
   updated_at_utc TEXT NOT NULL,
   PRIMARY KEY(context_key, behavior_key)
 );
+CREATE TABLE preference_audit(
+  audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  context_key TEXT NOT NULL,
+  behavior_key TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  previous_score REAL NOT NULL,
+  new_score REAL NOT NULL,
+  correlation_id TEXT NOT NULL,
+  created_at_utc TEXT NOT NULL
+);
 CREATE INDEX observations_label_time ON observations(label, observed_at_mono_ns DESC);
 CREATE INDEX observations_session_time ON observations(session_id, observed_at_mono_ns DESC);
 CREATE INDEX observations_track_time ON observations(track_id, observed_at_mono_ns DESC);

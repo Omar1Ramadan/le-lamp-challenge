@@ -1,6 +1,49 @@
+from dataclasses import dataclass
+
 from uuid6 import uuid7
 
 from social_lamp.domain.contracts import BehaviorIntent, SocialState, WorldSnapshot
+
+
+@dataclass(frozen=True)
+class AttentionIntent:
+    parameters: dict[str, int]
+
+
+class AttentionSchedule:
+    OFFSETS_NS = (5_000_000_000, 15_000_000_000, 35_000_000_000)
+    RESTART_COOLDOWN_NS = 60_000_000_000
+
+    def __init__(self, *, disengaged_at_ns: int) -> None:
+        self._start = disengaged_at_ns
+        self._emitted = 0
+        self.exhausted = False
+        self.suppression_reason: str | None = None
+        self._exhausted_at_ns: int | None = None
+
+    def suppress(self, reason: str, *, mono_ns: int | None = None) -> None:
+        self.suppression_reason = reason
+        self.exhausted = True
+        self._exhausted_at_ns = self._start if mono_ns is None else mono_ns
+
+    def intent_at(self, mono_ns: int) -> AttentionIntent | None:
+        if self.exhausted or self._emitted >= len(self.OFFSETS_NS):
+            return None
+        due = self._start + self.OFFSETS_NS[self._emitted]
+        if mono_ns < due:
+            return None
+        self._emitted += 1
+        level = self._emitted
+        if level == len(self.OFFSETS_NS):
+            self.exhausted = True
+            self._exhausted_at_ns = mono_ns
+        return AttentionIntent(parameters={"level": level})
+
+    def can_restart_at(self, mono_ns: int) -> bool:
+        if not self.exhausted:
+            return False
+        exhausted_at = self._exhausted_at_ns if self._exhausted_at_ns is not None else self._start
+        return mono_ns >= exhausted_at + self.RESTART_COOLDOWN_NS
 
 
 class BehaviorPolicy:

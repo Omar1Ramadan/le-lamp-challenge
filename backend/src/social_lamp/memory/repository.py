@@ -74,6 +74,17 @@ class ObservationWrite:
         )
 
 
+@dataclass(frozen=True)
+class PreferenceAuditWrite:
+    context: str
+    behavior: str
+    outcome: str
+    previous_score: float
+    new_score: float
+    correlation_id: str
+    created_at_utc: str
+
+
 class MemoryRepository:
     def __init__(self, connection: aiosqlite.Connection) -> None:
         self._connection = connection
@@ -103,6 +114,81 @@ class MemoryRepository:
         if row is None:
             return 0
         return int(row["count"])
+
+    async def record_preference_update(
+        self,
+        *,
+        context: str,
+        behavior: str,
+        outcome: str,
+        previous_score: float,
+        new_score: float,
+        correlation_id: str,
+    ) -> None:
+        now = _now_utc()
+        try:
+            await self._connection.execute("BEGIN")
+            await self._connection.execute(
+                """
+                INSERT INTO preference_audit(
+                    context_key, behavior_key, outcome, previous_score,
+                    new_score, correlation_id, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (context, behavior, outcome, previous_score, new_score, correlation_id, now),
+            )
+            await self._connection.execute(
+                """
+                INSERT INTO behavior_preferences(
+                    context_key, behavior_key, score, evidence_count, updated_at_utc
+                ) VALUES (?, ?, ?, 1, ?)
+                ON CONFLICT(context_key, behavior_key) DO UPDATE SET
+                    score = excluded.score,
+                    evidence_count = behavior_preferences.evidence_count + 1,
+                    updated_at_utc = excluded.updated_at_utc
+                """,
+                (context, behavior, new_score, now),
+            )
+            await self._connection.commit()
+        except Exception:
+            await self._connection.rollback()
+            raise
+
+    async def preference_score(self, context: str, behavior: str) -> float:
+        cursor = await self._connection.execute(
+            """
+            SELECT score FROM behavior_preferences
+            WHERE context_key = ? AND behavior_key = ?
+            """,
+            (context, behavior),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return 1.0
+        return float(row["score"])
+
+    async def preference_audit(self) -> tuple[PreferenceAuditWrite, ...]:
+        cursor = await self._connection.execute(
+            """
+            SELECT context_key, behavior_key, outcome, previous_score,
+                   new_score, correlation_id, created_at_utc
+            FROM preference_audit
+            ORDER BY audit_id
+            """
+        )
+        rows = await cursor.fetchall()
+        return tuple(
+            PreferenceAuditWrite(
+                context=str(row["context_key"]),
+                behavior=str(row["behavior_key"]),
+                outcome=str(row["outcome"]),
+                previous_score=float(row["previous_score"]),
+                new_score=float(row["new_score"]),
+                correlation_id=str(row["correlation_id"]),
+                created_at_utc=str(row["created_at_utc"]),
+            )
+            for row in rows
+        )
 
     async def record(self, observation: ObservationWrite) -> str:
         try:
