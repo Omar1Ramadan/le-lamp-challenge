@@ -1,0 +1,20 @@
+{
+  "dataset_version": "sample-1.0",
+  "fixtures": [
+    {
+      "name": "core-engagement",
+      "path": "evaluation/fixtures/core-engagement",
+      "kind": "event_replay",
+      "sample_only": true
+    }
+  ],
+  "core_gates": {
+    "engagement_f1": 0.85,
+    "false_transitions_per_two_minutes": 1.0,
+    "frame_to_observation_p95_ms": 200,
+    "state_to_visible_p95_ms": 150,
+    "memory_accuracy": 0.9,
+    "grounding_rate": 1.0,
+    "max_normal_frame_age_ms": 300
+  }
+}
