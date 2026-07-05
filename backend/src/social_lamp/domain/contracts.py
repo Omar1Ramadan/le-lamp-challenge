@@ -173,3 +173,26 @@ class BehaviorTimeline(FrozenModel):
     motion_tracks: tuple[MotionTrack, ...]
     light_track: tuple[LightKeyframe, ...] = ()
     audio_resource_id: str | None = None
+
+
+class MemoryQuery(FrozenModel):
+    kind: str
+    object_label: str = Field(min_length=1, max_length=80)
+    session_scope: UUID | str | None = None
+    before_utc: str | None = None
+    limit: int = Field(default=1, ge=1, le=20)
+
+
+class MemoryResult(FrozenModel):
+    status: str
+    canonical_label: str | None = None
+    horizontal_region: str | None = None
+    depth_band: str | None = None
+    anchor_name: str | None = None
+    observed_at_utc: str | None = None
+    evidence_ids: tuple[str, ...] = ()
+    alternatives: tuple[str, ...] = ()
+
+    @classmethod
+    def not_found(cls) -> "MemoryResult":
+        return cls(status="not_found")
