@@ -13,3 +13,10 @@ class SimulatorAdapter:
             {"type": "behavior_timeline", "body": timeline.model_dump(mode="json")}
         )
         return timeline.timeline_id
+
+    @property
+    def pose(self) -> dict[str, float]:
+        return {}
+
+    async def neutralize(self) -> None:
+        await self._hub.broadcast({"type": "neutralize", "body": {}})

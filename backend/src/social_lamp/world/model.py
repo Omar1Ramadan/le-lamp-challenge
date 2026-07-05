@@ -15,6 +15,9 @@ class WorldModel:
     def snapshot(self) -> WorldSnapshot:
         return self._snapshot
 
+    def replace(self, snapshot: WorldSnapshot) -> None:
+        self._snapshot = snapshot
+
     def apply(self, event: ObservationEvent) -> WorldSnapshot:
         if event.kind != "social_state_changed":
             return self._snapshot
