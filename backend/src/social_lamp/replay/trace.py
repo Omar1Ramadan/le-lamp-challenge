@@ -96,7 +96,11 @@ class TraceReader:
     def verify_checksum(self) -> bool:
         content = (self._directory / "events.jsonl").read_bytes()
         expected = (self._directory / "events.sha256").read_text(encoding="ascii").strip()
-        return hashlib.sha256(content).hexdigest() == expected
+        digest = hashlib.sha256(content).hexdigest()
+        if digest == expected:
+            return True
+        normalized = content.replace(bytes((13, 10)), bytes((10,)))
+        return hashlib.sha256(normalized).hexdigest() == expected
 
 
 def _validate_manifest(manifest: TraceManifest) -> None:

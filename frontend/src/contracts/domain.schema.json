@@ -1,0 +1,628 @@
+{
+  "$defs": {
+    "AudioMode": {
+      "enum": [
+        "silent",
+        "listening",
+        "thinking",
+        "speaking"
+      ],
+      "title": "AudioMode",
+      "type": "string"
+    },
+    "BehaviorTimeline": {
+      "additionalProperties": false,
+      "properties": {
+        "audio_resource_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Resource Id"
+        },
+        "cancellable": {
+          "title": "Cancellable",
+          "type": "boolean"
+        },
+        "correlation_id": {
+          "format": "uuid",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "duration_ms": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "intent_id": {
+          "format": "uuid",
+          "title": "Intent Id",
+          "type": "string"
+        },
+        "light_track": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LightKeyframe"
+          },
+          "title": "Light Track",
+          "type": "array"
+        },
+        "motion_tracks": {
+          "items": {
+            "$ref": "#/$defs/MotionTrack"
+          },
+          "title": "Motion Tracks",
+          "type": "array"
+        },
+        "priority": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "timeline_id": {
+          "format": "uuid",
+          "title": "Timeline Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "timeline_id",
+        "intent_id",
+        "correlation_id",
+        "priority",
+        "duration_ms",
+        "cancellable",
+        "motion_tracks"
+      ],
+      "title": "BehaviorTimeline",
+      "type": "object"
+    },
+    "ComponentHealth": {
+      "additionalProperties": false,
+      "properties": {
+        "component": {
+          "title": "Component",
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "status"
+      ],
+      "title": "ComponentHealth",
+      "type": "object"
+    },
+    "LightKeyframe": {
+      "additionalProperties": false,
+      "properties": {
+        "brightness": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Brightness",
+          "type": "number"
+        },
+        "offset_ms": {
+          "minimum": 0,
+          "title": "Offset Ms",
+          "type": "integer"
+        },
+        "rgb": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Rgb",
+          "type": "array"
+        }
+      },
+      "required": [
+        "offset_ms",
+        "rgb",
+        "brightness"
+      ],
+      "title": "LightKeyframe",
+      "type": "object"
+    },
+    "MemoryResult": {
+      "additionalProperties": false,
+      "properties": {
+        "alternatives": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Alternatives",
+          "type": "array"
+        },
+        "anchor_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor Name"
+        },
+        "canonical_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Canonical Label"
+        },
+        "depth_band": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Band"
+        },
+        "evidence_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "horizontal_region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Horizontal Region"
+        },
+        "observed_at_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At Utc"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "MemoryResult",
+      "type": "object"
+    },
+    "MotionKeyframe": {
+      "additionalProperties": false,
+      "properties": {
+        "easing": {
+          "default": "ease_in_out",
+          "title": "Easing",
+          "type": "string"
+        },
+        "offset_ms": {
+          "minimum": 0,
+          "title": "Offset Ms",
+          "type": "integer"
+        },
+        "value": {
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "offset_ms",
+        "value"
+      ],
+      "title": "MotionKeyframe",
+      "type": "object"
+    },
+    "MotionTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "title": "Channel",
+          "type": "string"
+        },
+        "keyframes": {
+          "items": {
+            "$ref": "#/$defs/MotionKeyframe"
+          },
+          "title": "Keyframes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "channel",
+        "keyframes"
+      ],
+      "title": "MotionTrack",
+      "type": "object"
+    },
+    "ObjectState": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor Name"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "depth_band": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Band"
+        },
+        "horizontal_region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Horizontal Region"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "track_id": {
+          "title": "Track Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "track_id",
+        "label",
+        "confidence"
+      ],
+      "title": "ObjectState",
+      "type": "object"
+    },
+    "ObservationEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "captured_at_mono_ns": {
+          "minimum": 0,
+          "title": "Captured At Mono Ns",
+          "type": "integer"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "correlation_id": {
+          "format": "uuid",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "emitted_at_mono_ns": {
+          "minimum": 0,
+          "title": "Emitted At Mono Ns",
+          "type": "integer"
+        },
+        "event_id": {
+          "format": "uuid",
+          "title": "Event Id",
+          "type": "string"
+        },
+        "frame_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Ref"
+        },
+        "kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/ObservationSource"
+        },
+        "wall_time_utc": {
+          "title": "Wall Time Utc",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "correlation_id",
+        "session_id",
+        "source",
+        "kind",
+        "captured_at_mono_ns",
+        "emitted_at_mono_ns",
+        "wall_time_utc",
+        "confidence",
+        "payload"
+      ],
+      "title": "ObservationEvent",
+      "type": "object"
+    },
+    "ObservationSource": {
+      "enum": [
+        "capture",
+        "face",
+        "gaze",
+        "audio",
+        "object",
+        "enrichment",
+        "operator",
+        "system"
+      ],
+      "title": "ObservationSource",
+      "type": "string"
+    },
+    "PersonState": {
+      "additionalProperties": false,
+      "properties": {
+        "engagement_confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Engagement Confidence",
+          "type": "number"
+        },
+        "engagement_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Engagement Score",
+          "type": "number"
+        },
+        "is_active_speaker": {
+          "default": false,
+          "title": "Is Active Speaker",
+          "type": "boolean"
+        },
+        "person_id": {
+          "title": "Person Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "person_id",
+        "engagement_score",
+        "engagement_confidence"
+      ],
+      "title": "PersonState",
+      "type": "object"
+    },
+    "SocialState": {
+      "enum": [
+        "idle",
+        "candidate",
+        "engaged",
+        "disengaged",
+        "seeking_attention"
+      ],
+      "title": "SocialState",
+      "type": "string"
+    },
+    "WorldSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of_mono_ns": {
+          "minimum": 0,
+          "title": "As Of Mono Ns",
+          "type": "integer"
+        },
+        "audio_mode": {
+          "$ref": "#/$defs/AudioMode"
+        },
+        "health": {
+          "items": {
+            "$ref": "#/$defs/ComponentHealth"
+          },
+          "title": "Health",
+          "type": "array"
+        },
+        "objects": {
+          "items": {
+            "$ref": "#/$defs/ObjectState"
+          },
+          "title": "Objects",
+          "type": "array"
+        },
+        "people": {
+          "items": {
+            "$ref": "#/$defs/PersonState"
+          },
+          "title": "People",
+          "type": "array"
+        },
+        "primary_person_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Primary Person Id"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "format": "uuid",
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "social_state": {
+          "$ref": "#/$defs/SocialState"
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "revision",
+        "session_id",
+        "as_of_mono_ns",
+        "social_state",
+        "audio_mode",
+        "primary_person_id",
+        "people",
+        "objects",
+        "health"
+      ],
+      "title": "WorldSnapshot",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "AudioMode": {
+      "$ref": "#/$defs/AudioMode"
+    },
+    "BehaviorTimeline": {
+      "$ref": "#/$defs/BehaviorTimeline"
+    },
+    "ComponentHealth": {
+      "$ref": "#/$defs/ComponentHealth"
+    },
+    "LightKeyframe": {
+      "$ref": "#/$defs/LightKeyframe"
+    },
+    "MemoryResult": {
+      "$ref": "#/$defs/MemoryResult"
+    },
+    "MotionKeyframe": {
+      "$ref": "#/$defs/MotionKeyframe"
+    },
+    "MotionTrack": {
+      "$ref": "#/$defs/MotionTrack"
+    },
+    "ObjectState": {
+      "$ref": "#/$defs/ObjectState"
+    },
+    "ObservationEvent": {
+      "$ref": "#/$defs/ObservationEvent"
+    },
+    "ObservationSource": {
+      "$ref": "#/$defs/ObservationSource"
+    },
+    "PersonState": {
+      "$ref": "#/$defs/PersonState"
+    },
+    "SocialState": {
+      "$ref": "#/$defs/SocialState"
+    },
+    "WorldSnapshot": {
+      "$ref": "#/$defs/WorldSnapshot"
+    }
+  },
+  "title": "SocialLampContracts",
+  "type": "object"
+}

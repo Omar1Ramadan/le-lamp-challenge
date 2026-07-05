@@ -1,4 +1,10 @@
 import type { BehaviorTimeline, LampPose, MotionChannel } from "../contracts/domain";
+import type {
+  BehaviorTimeline as DashboardTimeline,
+  MemoryResult,
+  ObservationEvent,
+  WorldSnapshot,
+} from "../contracts/generated";
 import { neutralPose } from "../scene/pose";
 
 export type ConnectionState = "connecting" | "connected" | "offline";
@@ -27,4 +33,76 @@ export function poseFromTimeline(timeline: BehaviorTimeline | null): LampPose {
     }
   }
   return pose;
+}
+
+interface MetricBody {
+  name: string;
+  value: number;
+}
+
+interface FaultBody {
+  component: string;
+  detail: string;
+}
+
+export type DashboardWorldSnapshot = Partial<WorldSnapshot> & {
+  revision: number;
+  social_state: string;
+  people: WorldSnapshot["people"];
+  objects: WorldSnapshot["objects"];
+  health: WorldSnapshot["health"];
+};
+
+export interface DashboardState {
+  world: DashboardWorldSnapshot | null;
+  timeline: DashboardTimeline | null;
+  evidence: MemoryResult[];
+  metrics: Record<string, number>;
+  faults: FaultBody[];
+  lastSequence: number;
+  needsResync: boolean;
+}
+
+export type ServerMessage =
+  | { sequence: number; type: "world_snapshot"; body: DashboardWorldSnapshot }
+  | { sequence: number; type: "behavior_timeline"; body: DashboardTimeline }
+  | { sequence: number; type: "observation"; body: ObservationEvent }
+  | { sequence: number; type: "memory_result"; body: MemoryResult }
+  | { sequence: number; type: "metric"; body: MetricBody }
+  | { sequence: number; type: "fault"; body: FaultBody };
+
+export const initialState: DashboardState = {
+  world: null,
+  timeline: null,
+  evidence: [],
+  metrics: {},
+  faults: [],
+  lastSequence: 0,
+  needsResync: false,
+};
+
+export function reduceServerMessage(
+  state: DashboardState,
+  message: ServerMessage,
+): DashboardState {
+  const gap = state.lastSequence !== 0 && message.sequence !== state.lastSequence + 1;
+  const next = {
+    ...state,
+    lastSequence: message.sequence,
+    needsResync: state.needsResync || gap,
+  };
+  switch (message.type) {
+    case "world_snapshot":
+      return { ...next, world: message.body };
+    case "behavior_timeline":
+      return { ...next, timeline: message.body };
+    case "memory_result":
+      return { ...next, evidence: [...state.evidence, message.body] };
+    case "metric":
+      return { ...next, metrics: { ...state.metrics, [message.body.name]: message.body.value } };
+    case "fault":
+      return { ...next, faults: [...state.faults, message.body] };
+    case "observation":
+      return next;
+  }
 }
