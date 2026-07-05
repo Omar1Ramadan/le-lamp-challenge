@@ -1,0 +1,5 @@
+{"body":{"kind":"face_presence","payload":{"confidence":0.91}},"record_type":"observation","recorded_at_mono_ns":100,"sequence":1}
+{"body":{"revision":1,"social_state":"candidate"},"record_type":"snapshot","recorded_at_mono_ns":200,"sequence":2}
+{"body":{"revision":2,"social_state":"engaged"},"record_type":"snapshot","recorded_at_mono_ns":900,"sequence":3}
+{"body":{"kind":"acknowledge","urgency":70},"record_type":"intent","recorded_at_mono_ns":920,"sequence":4}
+{"body":{"duration_ms":700,"motion_tracks":[{"channel":"head_pitch","keyframes":[{"offset_ms":0,"value":0.0},{"offset_ms":700,"value":0.35}]}]},"record_type":"timeline","recorded_at_mono_ns":930,"sequence":5}
