@@ -1,0 +1,1 @@
+"""Bounded camera capture helpers."""
