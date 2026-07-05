@@ -9,9 +9,11 @@ dependencies = [
     "numpy>=2.5.1",
     "opencv-python>=5.0.0.93",
     "pydantic>=2.13.4",
+    "sounddevice>=0.5.5",
     "ultralytics>=8.4.87",
     "uuid6>=2025.0.1",
     "uvicorn>=0.50.0",
+    "webrtcvad-wheels>=2.0.14",
 ]
 
 [dependency-groups]
