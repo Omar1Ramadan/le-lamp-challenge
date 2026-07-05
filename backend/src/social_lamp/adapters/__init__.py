@@ -1,0 +1,1 @@
+"""Lamp adapter protocols."""

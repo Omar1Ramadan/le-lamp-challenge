@@ -132,3 +132,44 @@ class WorldSnapshot(FrozenModel):
             objects=(),
             health=(),
         )
+
+
+class BehaviorIntent(FrozenModel):
+    intent_id: UUID
+    correlation_id: UUID
+    session_id: UUID
+    kind: str
+    urgency: int = Field(ge=0, le=100)
+    created_at_mono_ns: int = Field(ge=0)
+    expires_at_mono_ns: int = Field(ge=0)
+    target_person_id: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class MotionKeyframe(FrozenModel):
+    offset_ms: int = Field(ge=0)
+    value: float = Field(ge=-1.0, le=1.0)
+    easing: str = "ease_in_out"
+
+
+class MotionTrack(FrozenModel):
+    channel: str
+    keyframes: tuple[MotionKeyframe, ...]
+
+
+class LightKeyframe(FrozenModel):
+    offset_ms: int = Field(ge=0)
+    rgb: tuple[float, float, float]
+    brightness: float = Field(ge=0.0, le=1.0)
+
+
+class BehaviorTimeline(FrozenModel):
+    timeline_id: UUID
+    intent_id: UUID
+    correlation_id: UUID
+    priority: int = Field(ge=0, le=100)
+    duration_ms: int = Field(gt=0)
+    cancellable: bool
+    motion_tracks: tuple[MotionTrack, ...]
+    light_track: tuple[LightKeyframe, ...] = ()
+    audio_resource_id: str | None = None
