@@ -1,0 +1,134 @@
+from enum import StrEnum
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+from uuid6 import uuid7
+
+from social_lamp.domain.clock import Clock
+
+
+class FrozenModel(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class ObservationSource(StrEnum):
+    CAPTURE = "capture"
+    FACE = "face"
+    GAZE = "gaze"
+    AUDIO = "audio"
+    OBJECT = "object"
+    ENRICHMENT = "enrichment"
+    OPERATOR = "operator"
+    SYSTEM = "system"
+
+
+class SocialState(StrEnum):
+    IDLE = "idle"
+    CANDIDATE = "candidate"
+    ENGAGED = "engaged"
+    DISENGAGED = "disengaged"
+    SEEKING_ATTENTION = "seeking_attention"
+
+
+class AudioMode(StrEnum):
+    SILENT = "silent"
+    LISTENING = "listening"
+    THINKING = "thinking"
+    SPEAKING = "speaking"
+
+
+class ObservationEvent(FrozenModel):
+    schema_version: str = "1.0"
+    event_id: UUID
+    correlation_id: UUID
+    session_id: UUID
+    source: ObservationSource
+    kind: str = Field(min_length=1, max_length=80)
+    captured_at_mono_ns: int = Field(ge=0)
+    emitted_at_mono_ns: int = Field(ge=0)
+    wall_time_utc: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    frame_ref: str | None = None
+    payload: dict[str, Any]
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        clock: Clock,
+        session_id: UUID,
+        correlation_id: UUID,
+        source: ObservationSource,
+        kind: str,
+        confidence: float,
+        payload: dict[str, Any],
+        captured_at_mono_ns: int | None = None,
+        frame_ref: str | None = None,
+    ) -> "ObservationEvent":
+        now = clock.mono_ns
+        captured = now if captured_at_mono_ns is None else captured_at_mono_ns
+        return cls(
+            event_id=uuid7(),
+            correlation_id=correlation_id,
+            session_id=session_id,
+            source=source,
+            kind=kind,
+            captured_at_mono_ns=captured,
+            emitted_at_mono_ns=now,
+            wall_time_utc=clock.wall_time_utc,
+            confidence=confidence,
+            frame_ref=frame_ref,
+            payload=payload,
+        )
+
+
+class PersonState(FrozenModel):
+    person_id: str
+    engagement_score: float = Field(ge=0.0, le=1.0)
+    engagement_confidence: float = Field(ge=0.0, le=1.0)
+    is_active_speaker: bool = False
+
+
+class ObjectState(FrozenModel):
+    track_id: str
+    label: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    horizontal_region: str | None = None
+    depth_band: str | None = None
+    anchor_name: str | None = None
+
+
+class ComponentHealth(FrozenModel):
+    component: str
+    status: str
+    detail: str | None = None
+
+
+class WorldSnapshot(FrozenModel):
+    schema_version: str = "1.0"
+    snapshot_id: UUID
+    revision: int = Field(ge=0)
+    session_id: UUID
+    as_of_mono_ns: int = Field(ge=0)
+    social_state: SocialState
+    audio_mode: AudioMode
+    primary_person_id: str | None
+    people: tuple[PersonState, ...]
+    objects: tuple[ObjectState, ...]
+    health: tuple[ComponentHealth, ...]
+
+    @classmethod
+    def empty(cls, *, session_id: UUID, mono_ns: int) -> "WorldSnapshot":
+        return cls(
+            snapshot_id=uuid7(),
+            revision=0,
+            session_id=session_id,
+            as_of_mono_ns=mono_ns,
+            social_state=SocialState.IDLE,
+            audio_mode=AudioMode.SILENT,
+            primary_person_id=None,
+            people=(),
+            objects=(),
+            health=(),
+        )
