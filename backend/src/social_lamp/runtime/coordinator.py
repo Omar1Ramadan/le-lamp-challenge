@@ -6,12 +6,15 @@ from typing import Protocol
 
 from uuid6 import uuid7
 
+from social_lamp.audio.analysis import AudioAnalyzer, AudioState, SimulatorAudioInterruption
+from social_lamp.audio.stream import MicrophoneChunk
 from social_lamp.behavior.compositor import BehaviorCompositor
 from social_lamp.behavior.policy import BehaviorPolicy
 from social_lamp.capture.frames import CapturedFrame
 from social_lamp.conversation.base import ConversationProvider, ConversationResponse
 from social_lamp.conversation.template import TemplateConversationProvider
 from social_lamp.domain.contracts import (
+    AudioMode,
     BehaviorTimeline,
     ComponentHealth,
     MemoryQuery,
@@ -87,6 +90,8 @@ class RuntimeCoordinator:
         self._resources_closed = False
         self._object_tracks: dict[str, ObjectTrack] = {}
         self._recorded_stable_tracks: set[str] = set()
+        self._audio_analyzer = AudioAnalyzer()
+        self.audio_state = AudioState(False, False, None)
         self.bonuses_enabled = False
 
     @classmethod
@@ -163,6 +168,60 @@ class RuntimeCoordinator:
 
     async def clear_memory(self) -> None:
         await self.memory.clear()
+
+    def configure_audio(self, *, interruption: SimulatorAudioInterruption | None = None) -> None:
+        self._audio_analyzer = AudioAnalyzer(interruption=interruption)
+
+    def set_simulator_speaking(self, speaking: bool) -> None:
+        self._audio_analyzer.set_simulator_speaking(speaking)
+
+    async def process_audio_chunk(self, chunk: MicrophoneChunk, *, classifier: object) -> None:
+        snapshot = self.world.snapshot
+        try:
+            frame = classifier.classify(chunk.pcm, chunk.sample_rate)  # type: ignore[attr-defined]
+        except Exception as exc:
+            self.world.replace(
+                snapshot.model_copy(
+                    update={
+                        "revision": snapshot.revision + 1,
+                        "as_of_mono_ns": chunk.mono_ns,
+                        "health": _replace_health(
+                            snapshot.health,
+                            ComponentHealth(
+                                component="microphone", status="degraded", detail=str(exc)
+                            ),
+                        ),
+                    }
+                )
+            )
+            return
+        self.audio_state = self._audio_analyzer.push(frame)
+        people = snapshot.people
+        if self.audio_state.speaker_id is not None:
+            people = (
+                PersonState(
+                    person_id=self.audio_state.speaker_id,
+                    engagement_score=0.0,
+                    engagement_confidence=0.0,
+                    is_active_speaker=True,
+                ),
+            )
+        self.world.replace(
+            snapshot.model_copy(
+                update={
+                    "snapshot_id": uuid7(),
+                    "revision": snapshot.revision + 1,
+                    "as_of_mono_ns": chunk.mono_ns,
+                    "audio_mode": AudioMode.LISTENING
+                    if self.audio_state.speech_active
+                    else AudioMode.SILENT,
+                    "people": people,
+                    "health": _replace_health(
+                        snapshot.health, ComponentHealth(component="microphone", status="ok")
+                    ),
+                }
+            )
+        )
 
     async def process_vision_frame(
         self,
