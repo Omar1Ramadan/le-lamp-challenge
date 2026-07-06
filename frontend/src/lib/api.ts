@@ -4,6 +4,12 @@ export interface ReplaySummary {
   directory: string;
 }
 
+interface ReplayResponse {
+  messages?: unknown[];
+}
+
+const API_BASE = window.location.port === "5173" ? "http://127.0.0.1:8000" : "";
+
 export async function getHealth(): Promise<{ status: string }> {
   return fetchJson("/api/health");
 }
@@ -17,12 +23,13 @@ export async function getReplays(): Promise<ReplaySummary[]> {
   return response.replays;
 }
 
-export async function runReplay(directory: string): Promise<void> {
-  await fetchJson("/api/replay", {
+export async function runReplay(directory: string): Promise<unknown[]> {
+  const response = await fetchJson<ReplayResponse>("/api/replay", {
     body: JSON.stringify({ directory }),
     headers: { "Content-Type": "application/json" },
     method: "POST",
   });
+  return response.messages ?? [];
 }
 
 export async function submitText(text: string): Promise<string> {
@@ -35,7 +42,7 @@ export async function submitText(text: string): Promise<string> {
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  const response = await fetch(`${API_BASE}${url}`, init);
   if (!response.ok) {
     throw new Error(`${url} failed with ${response.status}`);
   }

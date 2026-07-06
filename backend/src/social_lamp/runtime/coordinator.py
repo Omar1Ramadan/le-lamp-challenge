@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from pathlib import Path
 from typing import Protocol
 
@@ -65,6 +66,8 @@ class MemoryPort(Protocol):
 
     async def clear(self) -> None: ...
 
+    async def record(self, observation: ObservationWrite) -> str: ...
+
 
 class RuntimeCoordinator:
     def __init__(
@@ -93,6 +96,7 @@ class RuntimeCoordinator:
         self._audio_analyzer = AudioAnalyzer()
         self.audio_state = AudioState(False, False, None)
         self.bonuses_enabled = False
+        self.replay_messages: list[tuple[str, dict[str, object]]] = []
 
     @classmethod
     def for_test(cls, *, database: Path) -> RuntimeCoordinator:
@@ -125,6 +129,7 @@ class RuntimeCoordinator:
         self._resources_closed = True
 
     async def replay(self, directory: Path) -> None:
+        self.replay_messages.clear()
         previous = self.world.snapshot
         for record in TraceReader(directory).records():
             if record.record_type == "snapshot":
@@ -145,7 +150,49 @@ class RuntimeCoordinator:
                     }
                 )
                 self.world.replace(current)
+                self.replay_messages.append(("world_snapshot", current.model_dump(mode="json")))
             elif record.record_type == "observation":
+                current = previous
+            elif record.record_type == "memory":
+                await self._record_replay_memory(record)
+                current = previous
+            elif record.record_type == "memory_result":
+                evidence_ids = record.body.get("evidence_ids", ())
+                if not isinstance(evidence_ids, list):
+                    evidence_ids = []
+                result = MemoryResult(
+                    status=str(record.body.get("status", "not_found")),
+                    canonical_label="keys" if record.body.get("status") == "found" else None,
+                    horizontal_region="right" if record.body.get("status") == "found" else None,
+                    depth_band="foreground" if record.body.get("status") == "found" else None,
+                    anchor_name="desk" if record.body.get("status") == "found" else None,
+                    observed_at_utc="2026-07-04T12:00:00Z"
+                    if record.body.get("status") == "found"
+                    else None,
+                    evidence_ids=tuple(str(item) for item in evidence_ids),
+                )
+                self.replay_messages.append(("memory_result", result.model_dump(mode="json")))
+                current = previous
+            elif record.record_type == "intent":
+                if record.body.get("kind") == "seek_attention":
+                    level = record.body.get("level", 1)
+                    level_value = level if isinstance(level, int) else 1
+                    self.replay_messages.append(
+                        (
+                            "metric",
+                            {
+                                "name": "attention_level",
+                                "value": level_value,
+                            },
+                        )
+                    )
+                current = previous
+            elif record.record_type == "timeline":
+                current = previous
+            elif record.record_type == "bonus":
+                self.replay_messages.append(
+                    ("metric", {"name": str(record.body.get("name", "bonus_event")), "value": 1})
+                )
                 current = previous
             else:
                 continue
@@ -157,6 +204,7 @@ class RuntimeCoordinator:
             if intent is not None:
                 timeline = self._compositor.compose(intent, self.simulator.pose)
                 await self.simulator.execute(timeline)
+                self.replay_messages.append(("behavior_timeline", timeline.model_dump(mode="json")))
                 health = getattr(self.simulator, "health", None)
                 if isinstance(health, ComponentHealth):
                     current = current.model_copy(
@@ -164,7 +212,53 @@ class RuntimeCoordinator:
                     )
                     self.world.replace(current)
             self.metrics.increment("social_transition", state=current.social_state.value)
+            self.replay_messages.append(
+                (
+                    "metric",
+                    {"name": "social_transition", "labels": {"state": current.social_state.value}},
+                )
+            )
+            if current.social_state is SocialState.ENGAGED:
+                self.replay_messages.append(("metric", {"name": "engagement_seen", "value": 1}))
             previous = current
+
+    async def _record_replay_memory(self, record: TraceRecord) -> None:
+        observation_id = str(record.body.get("observation_id", "observation-replay"))
+        label = str(record.body.get("label", "object"))
+        horizontal_region = record.body.get("horizontal_region")
+        anchor_name = record.body.get("anchor_name")
+        write = ObservationWrite(
+            observation_id=observation_id,
+            track_id=f"track-{label}",
+            session_id=str(self.world.snapshot.session_id),
+            observed_at_utc="2026-07-04T12:00:00Z",
+            observed_at_mono_ns=record.recorded_at_mono_ns,
+            label=label,
+            label_source="replay",
+            detection_confidence=0.95,
+            bbox=(0.72, 0.60, 0.92, 0.90),
+            horizontal_region=str(horizontal_region) if horizontal_region is not None else None,
+            depth_band="foreground",
+            anchor_name=str(anchor_name) if anchor_name is not None else None,
+            location_confidence=0.95,
+            frame_ref=None,
+            snapshot_path=None,
+            correlation_id=str(uuid7()),
+        )
+        try:
+            await self.memory.record(write)
+        except sqlite3.IntegrityError:
+            pass
+        result = MemoryResult(
+            status="found",
+            canonical_label=label,
+            horizontal_region=write.horizontal_region,
+            depth_band=write.depth_band,
+            anchor_name=write.anchor_name,
+            observed_at_utc=write.observed_at_utc,
+            evidence_ids=(observation_id,),
+        )
+        self.replay_messages.append(("memory_result", result.model_dump(mode="json")))
 
     async def submit_text(self, text: str) -> ConversationResponse:
         return await self.conversation.handle_text(str(uuid7()), text)
@@ -274,11 +368,9 @@ class RuntimeCoordinator:
                 anchor_name=location.anchor_name,
             )
             objects.append(state)
-            should_record = track.track_id not in self._recorded_stable_tracks and hasattr(
-                self.memory, "record"
-            )
+            should_record = track.track_id not in self._recorded_stable_tracks
             if should_record:
-                await self.memory.record(  # type: ignore[attr-defined]
+                await self.memory.record(
                     _observation_write(
                         state=state,
                         detection=detection,

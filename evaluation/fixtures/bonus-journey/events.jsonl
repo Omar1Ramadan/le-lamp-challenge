@@ -1,0 +1,5 @@
+{"body":{"name":"active_speaker_person_b"},"record_type":"bonus","recorded_at_mono_ns":100,"sequence":1}
+{"body":{"name":"affect_confidence_gated"},"record_type":"bonus","recorded_at_mono_ns":200,"sequence":2}
+{"body":{"name":"preference_score_changed_reset"},"record_type":"bonus","recorded_at_mono_ns":300,"sequence":3}
+{"body":{"name":"speech_interruption_cancelled"},"record_type":"bonus","recorded_at_mono_ns":400,"sequence":4}
+{"body":{"name":"television_suppression_active"},"record_type":"bonus","recorded_at_mono_ns":500,"sequence":5}

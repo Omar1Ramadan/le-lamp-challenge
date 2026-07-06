@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from social_lamp.api.hub import ConnectionHub
@@ -48,6 +49,12 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
 
     app = FastAPI(title="Simulated Social Lamp", version="0.1.0", lifespan=lifespan)
     app.state.hub = hub
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.middleware("http")
     async def loopback_only(
@@ -98,16 +105,51 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     async def replay(request: Request, body: ReplayRequest) -> dict[str, object]:
         coordinator = _coordinator(request.app)
         await coordinator.replay(Path(body.directory))
-        await hub.broadcast(
-            {"type": "world_snapshot", "body": coordinator.world.snapshot.model_dump(mode="json")}
-        )
-        await hub.broadcast(
-            {
-                "type": "metric",
-                "body": {"name": "social_transition", "labels": {"state": "engaged"}},
-            }
-        )
-        return {"ok": True, "revision": coordinator.world.snapshot.revision}
+        replay_messages = getattr(coordinator, "replay_messages", [])
+        backend_proof_messages = [
+            item
+            for item in replay_messages
+            if item[0] in {"memory_result", "fault"}
+            or (
+                item[0] == "metric"
+                and item[1].get("name") not in {"social_transition", "engagement_seen"}
+            )
+        ]
+        if backend_proof_messages:
+            for message_type, message_body in replay_messages:
+                if message_type == "behavior_timeline":
+                    continue
+                await hub.broadcast({"type": message_type, "body": message_body})
+            response_messages = [
+                {"seq": 10_000 + index, "type": message_type, "body": message_body}
+                for index, (message_type, message_body) in enumerate(replay_messages, start=1)
+                if message_type != "behavior_timeline"
+            ]
+        else:
+            await hub.broadcast(
+                {
+                    "type": "world_snapshot",
+                    "body": coordinator.world.snapshot.model_dump(mode="json"),
+                }
+            )
+            await hub.broadcast(
+                {
+                    "type": "metric",
+                    "body": {"name": "social_transition", "labels": {"state": "engaged"}},
+                }
+            )
+            response_messages = [
+                {
+                    "seq": 10_001,
+                    "type": "world_snapshot",
+                    "body": coordinator.world.snapshot.model_dump(mode="json"),
+                }
+            ]
+        return {
+            "ok": True,
+            "revision": coordinator.world.snapshot.revision,
+            "messages": response_messages,
+        }
 
     @app.get("/api/simulator/timelines/{timeline_id}")
     async def simulator_timeline(timeline_id: str) -> dict[str, object]:
@@ -121,6 +163,12 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     async def submit_text(request: Request, body: TextRequest) -> dict[str, object]:
         coordinator = _coordinator(request.app)
         response = await coordinator.submit_text(body.text)
+        await hub.broadcast(
+            {
+                "type": "metric",
+                "body": {"name": f"recall_{response.status}", "value": 1},
+            }
+        )
         return {"ok": True, "response": response.__dict__}
 
     @app.post("/api/neutralize")
