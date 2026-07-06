@@ -29,6 +29,7 @@ function App() {
   const [replays, setReplays] = useState<ReplaySummary[]>([]);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
+  const [showEvidence, setShowEvidence] = useState(false);
   const world = state.world;
   const pose = useMemo(() => poseFromTimeline(state.timeline), [state.timeline]);
   const evidence = useMemo(() => inspectorEvidence(state.evidence), [state.evidence]);
@@ -57,7 +58,10 @@ function App() {
 
   async function loadReplay(replay: ReplaySummary) {
     setAnswer("");
-    await runReplay(replay.directory);
+    const messages = await runReplay(replay.directory);
+    for (const message of messages) {
+      dispatch(message as ServerMessage);
+    }
   }
 
   async function askLamp() {
@@ -91,12 +95,16 @@ function App() {
           <h2>Replay proof</h2>
           {replays.map((replay) => (
             <button type="button" key={replay.id} onClick={() => void loadReplay(replay)}>
-              {replay.label}
+              Load {replay.label.toLowerCase()} replay
             </button>
           ))}
           <div
             data-testid="demo-step-engagement"
-            data-complete={world?.social_state === "engaged" ? "true" : "false"}
+            data-complete={
+              world?.social_state === "engaged" || state.metrics.engagement_seen
+                ? "true"
+                : "false"
+            }
           >
             Engagement
           </div>
@@ -104,7 +112,11 @@ function App() {
             data-testid="demo-step-attention"
             data-complete={state.timeline ? "true" : "false"}
           >
-            {state.timeline ? "Seeking attention: live timeline received" : "Attention pending"}
+            {state.metrics.attention_level
+              ? `Seeking attention: level ${state.metrics.attention_level}`
+              : state.timeline
+                ? "Attention timeline received from backend"
+                : "Attention pending"}
           </div>
           <label>
             Ask the lamp
@@ -118,6 +130,16 @@ function App() {
             Ask
           </button>
           <p data-testid="lamp-answer">{answer}</p>
+          <button type="button" onClick={() => setShowEvidence(true)}>
+            Show evidence
+          </button>
+          {showEvidence ? (
+            <ul aria-label="Visible evidence identifiers">
+              {state.evidence.flatMap((item) => item.evidence_ids ?? []).map((id) => (
+                <li key={id}>{id}</li>
+              ))}
+            </ul>
+          ) : null}
         </section>
       </section>
     </main>

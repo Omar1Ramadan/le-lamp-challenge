@@ -92,6 +92,22 @@ curl -X POST http://127.0.0.1:8000/api/replay \
 
 The replay demonstrates engagement, attention seeking, memory formation, and memory recall without camera, microphone, cloud, or physical hardware.
 
+The functional-demo proof is backend driven: replay buttons come from `GET /api/replays`, proof state is updated from WebSocket/API messages, object recall uses persisted SQLite evidence, and the browser simulator receives runtime timelines over `/ws`.
+
+## Functional local-first acceptance
+
+For release proof, run both paths:
+
+```bash
+# Hardware-free CI/live-runtime proof with fake camera evidence
+uv run pytest tests/runtime/test_demo_acceptance.py -v
+
+# Browser proof of backend-driven replay and bonus states
+pnpm e2e
+```
+
+When local hardware is available, also run one real webcam/microphone session, confirm degraded-health indicators clear or report useful fallback status, ask a recall question backed by evidence IDs, and export an active runtime trace.
+
 ## Tests and validation
 
 Focused backend check for delivery docs:

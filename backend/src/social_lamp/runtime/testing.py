@@ -8,6 +8,7 @@ from uuid6 import uuid7
 
 from social_lamp.domain.clock import FakeClock
 from social_lamp.domain.contracts import BehaviorTimeline, MemoryResult, WorldSnapshot
+from social_lamp.memory.repository import ObservationWrite
 from social_lamp.runtime.coordinator import RuntimeCoordinator
 from social_lamp.world.model import WorldModel
 
@@ -54,6 +55,9 @@ class TestMemory:
 
     async def clear(self) -> None:
         self.cleared = True
+
+    async def record(self, observation: ObservationWrite) -> str:
+        return observation.observation_id
 
     async def find_last_seen(
         self,

@@ -10,5 +10,7 @@ test("replay demonstrates engagement, attention seeking, memory, and recall", as
   await page.getByRole("button", { name: "Ask" }).click();
   await expect(page.getByTestId("lamp-answer")).toContainText("right side of the desk");
   await page.getByRole("button", { name: "Show evidence" }).click();
-  await expect(page.getByText("observation-core-keys-2")).toBeVisible();
+  await expect(page.getByLabel("Visible evidence identifiers")).toContainText(
+    "observation-core-keys-2",
+  );
 });

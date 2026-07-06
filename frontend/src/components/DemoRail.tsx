@@ -4,6 +4,14 @@ interface DemoRailProps {
 }
 
 export function DemoRail({ metrics, needsResync }: DemoRailProps) {
+  const labels: Record<string, string> = {
+    active_speaker_person_b: "Active speaker: Person B",
+    affect_confidence_gated: "Affect confidence gated below 0.60",
+    preference_score_changed_reset: "Preference score changed then reset",
+    speech_interruption_cancelled: "Speech interruption cancellation under 120 ms",
+    television_suppression_active: "Television suppression active",
+  };
+
   return (
     <section className="panel" aria-label="Demo controls and metrics">
       <h2>Demo rail</h2>
@@ -11,7 +19,7 @@ export function DemoRail({ metrics, needsResync }: DemoRailProps) {
       <dl>
         {Object.entries(metrics).map(([name, value]) => (
           <div key={name}>
-            <dt>{name}</dt>
+            <dt>{labels[name] ?? name}</dt>
             <dd>{value}</dd>
           </div>
         ))}

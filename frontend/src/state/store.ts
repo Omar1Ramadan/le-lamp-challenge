@@ -97,8 +97,13 @@ export function reduceServerMessage(
       return { ...next, world: message.body };
     case "behavior_timeline":
       return { ...next, timeline: message.body };
-    case "memory_result":
-      return { ...next, evidence: [...state.evidence, message.body] };
+    case "memory_result": {
+      const evidenceKey = (message.body.evidence_ids ?? []).join("|") || message.body.status;
+      const seen = state.evidence.some(
+        (item) => ((item.evidence_ids ?? []).join("|") || item.status) === evidenceKey,
+      );
+      return { ...next, evidence: seen ? state.evidence : [...state.evidence, message.body] };
+    }
     case "metric":
       return {
         ...next,

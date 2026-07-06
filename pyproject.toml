@@ -16,6 +16,7 @@ dependencies = [
     "uuid6>=2025.0.1",
     "uvicorn>=0.50.0",
     "webrtcvad-wheels>=2.0.14",
+    "websockets>=16.0",
 ]
 
 [dependency-groups]

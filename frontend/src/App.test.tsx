@@ -83,7 +83,7 @@ describe("App backend integration", () => {
   it("loads replay buttons from the backend and updates proof from socket evidence", async () => {
     render(<App />);
 
-    const replayButton = await screen.findByRole("button", { name: "Core Journey" });
+    const replayButton = await screen.findByRole("button", { name: "Load core journey replay" });
     fireEvent.click(replayButton);
 
     expect(fetch).toHaveBeenCalledWith("/api/replay", {
@@ -125,8 +125,8 @@ describe("App backend integration", () => {
 
     await waitFor(() => expect(screen.getByTestId("demo-step-engagement")).toHaveAttribute("data-complete", "true"));
     expect(screen.getByTestId("lamp-pose")).toHaveTextContent("0.5");
-    expect(screen.getByText("keys")).toBeVisible();
-    expect(screen.getByText("observation-core-keys-2")).toBeVisible();
+    expect(screen.getByRole("article", { name: /memory: keys/i })).toHaveTextContent("keys");
+    expect(screen.getAllByText("observation-core-keys-2")[0]).toBeVisible();
   });
 
   it("submits text questions to the backend", async () => {
