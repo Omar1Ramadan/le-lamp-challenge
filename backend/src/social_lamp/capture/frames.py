@@ -5,6 +5,8 @@ from threading import Lock
 import numpy as np
 from numpy.typing import NDArray
 
+from social_lamp.domain.contracts import ComponentHealth
+
 
 @dataclass(frozen=True)
 class CapturedFrame:
@@ -13,12 +15,13 @@ class CapturedFrame:
 
 
 class LatestFrameBuffer:
-    def __init__(self, *, capacity: int = 3) -> None:
+    def __init__(self, *, capacity: int = 3, max_age_ns: int = 300_000_000) -> None:
         if capacity < 1:
             raise ValueError("capacity must be at least 1")
         self._frames: deque[CapturedFrame] = deque(maxlen=capacity)
         self._lock = Lock()
         self.dropped = 0
+        self.max_age_ns = max_age_ns
 
     def put(self, image: NDArray[np.uint8], mono_ns: int) -> None:
         with self._lock:
@@ -26,9 +29,22 @@ class LatestFrameBuffer:
                 self.dropped += 1
             self._frames.append(CapturedFrame(image.copy(), mono_ns))
 
-    def latest(self) -> CapturedFrame | None:
+    def latest(self, *, now_mono_ns: int | None = None) -> CapturedFrame | None:
         with self._lock:
-            return self._frames[-1] if self._frames else None
+            if not self._frames:
+                return None
+            frame = self._frames[-1]
+            if now_mono_ns is not None and now_mono_ns - frame.mono_ns > self.max_age_ns:
+                return None
+            return frame
+
+    def health(self, *, now_mono_ns: int) -> ComponentHealth:
+        with self._lock:
+            if not self._frames:
+                return ComponentHealth(component="camera", status="degraded", detail="no frames")
+            if now_mono_ns - self._frames[-1].mono_ns > self.max_age_ns:
+                return ComponentHealth(component="camera", status="degraded", detail="stale frame")
+            return ComponentHealth(component="camera", status="ok")
 
 
 def _probe_camera() -> int:
