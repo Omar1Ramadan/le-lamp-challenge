@@ -2974,3 +2974,333 @@ git commit -m "docs: add reproducible delivery and demo guidance"
 - [ ] Confirm raw media, secrets, databases, snapshots, and generated private reports are not tracked.
 - [ ] Record the final demo from the exact commit/configuration/dataset versions named in its report.
 - [ ] Compare measured gates against `docs/design/09-evaluation-delivery.md`; document any approved exception before release.
+
+---
+
+## Post-Task-20 Audit: Remaining Work To Reach a Functional Demo
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this addendum task-by-task. Keep Tasks 1-20 as historical record; this section is the audited gap between the approved design and the current replay-first implementation.
+
+**Audit summary:** The codebase already includes the typed FastAPI surface, deterministic replay, template recall, memory query abstractions, evaluation/report generation, frontend dashboard scaffolding, and Playwright proof for replay journeys. The missing work is the live runtime wiring that turns those pieces into a real local demo rather than a primarily test-backed or hardcoded proof path.
+
+**Confirmed still missing from the current implementation:**
+- `create_app()` still boots `RuntimeCoordinator.for_test(...)` instead of a production runtime builder.
+- No live camera capture loop is feeding the backend world model continuously.
+- No live OpenCV/MediaPipe/YOLO pipeline is connected end-to-end into observations, memory, and behavior.
+- No live microphone stream is feeding the audio analyzer primitives.
+- The simulator adapter path is still missing real client acknowledgement and connection-state execution semantics beyond broadcast.
+- The frontend replay controls and proof states are still largely hardcoded rather than driven by backend data.
+- The frontend reducer exists, but live `/ws` updates are not wired into React application state.
+- Persistent runtime memory is not the normal app path because the FastAPI app still starts from test wiring.
+
+### Task 21: Replace test bootstrapping with a production runtime builder
+
+**Files:**
+- Modify: `backend/src/social_lamp/api/app.py`
+- Modify: `backend/src/social_lamp/runtime/coordinator.py`
+- Modify: `backend/src/social_lamp/runtime/providers.py`
+- Create or expand: `backend/src/social_lamp/runtime/live.py`
+- Add: `tests/runtime/test_live_runtime.py`
+
+- [ ] **Step 1: Write the failing runtime boot integration test**
+
+Add a test that creates the FastAPI app, inspects `app.state.coordinator`, and asserts it is built from real runtime dependencies rather than `RuntimeCoordinator.for_test(...)`. Also assert the runtime owns a real memory repository and simulator adapter rather than `TestMemory` and `FakeSimulator`.
+
+- [ ] **Step 2: Run the test to prove production boot wiring is still absent**
+
+Run: `uv run pytest tests/runtime/test_live_runtime.py -v`
+
+Expected: FAIL because `create_app()` still constructs `RuntimeCoordinator.for_test(database=Path(".runtime/memory.db"))`.
+
+- [ ] **Step 3: Build the real runtime factory**
+
+Create one production runtime builder that constructs `Settings`, the real SQLite repository, the world model, metrics, conversation provider, trace writer, and the simulator adapter from explicit dependencies. Keep `RuntimeCoordinator.for_test(...)` for unit tests only; application boot must stop importing or using test doubles.
+
+Move lifecycle ownership into the coordinator so `start()` launches managed tasks and `stop()` cancels them, drains critical writes, neutralizes the adapter, and closes resources cleanly.
+
+- [ ] **Step 4: Verify production app boot and clean shutdown**
+
+Run:
+
+```powershell
+uv run pytest tests/runtime/test_live_runtime.py tests/api/test_app.py -v
+```
+
+Expected: the app boots with real runtime wiring, startup/shutdown are idempotent, and existing API tests still pass.
+
+- [ ] **Step 5: Commit runtime boot replacement**
+
+```powershell
+git add backend/src/social_lamp/api/app.py backend/src/social_lamp/runtime tests/runtime
+git commit -m "feat: replace test app boot with production runtime wiring"
+```
+
+### Task 22: Add the live camera capture and visual inference runtime
+
+**Files:**
+- Modify: `backend/src/social_lamp/capture/frames.py`
+- Modify: `backend/src/social_lamp/perception/faces.py`
+- Modify: `backend/src/social_lamp/perception/objects.py`
+- Modify: `backend/src/social_lamp/perception/location.py`
+- Modify: `backend/src/social_lamp/runtime/coordinator.py`
+- Add: `tests/runtime/test_live_vision_pipeline.py`
+
+- [ ] **Step 1: Write failing runtime tests for live frame ingestion**
+
+Add tests that inject fake frames into the live runtime and assert the coordinator publishes updated world snapshots, face observations, stable object evidence, and degraded camera/model health when capture or inference is unavailable.
+
+- [ ] **Step 2: Run the tests to confirm the live visual loop is not wired**
+
+Run: `uv run pytest tests/runtime/test_live_vision_pipeline.py -v`
+
+Expected: FAIL because there is no coordinator-managed camera loop or end-to-end visual inference pipeline.
+
+- [ ] **Step 3: Implement the bounded live visual pipeline**
+
+Add a camera worker that continuously refreshes `LatestFrameBuffer` from OpenCV without accumulating stale frames. Add a perception worker that consumes the newest frame, runs MediaPipe face processing and YOLO object detection/localization, converts outputs into typed observations, and forwards only stable evidence into world state and memory.
+
+Treat missing camera access, model load failure, and stale frames as degraded health states rather than fatal errors. Replay mode must remain available even when live vision is degraded.
+
+- [ ] **Step 4: Verify live visual updates and degraded-health behavior**
+
+Run:
+
+```powershell
+uv run pytest tests/perception tests/runtime/test_live_vision_pipeline.py -v
+```
+
+Expected: live frames produce world updates, stable object evidence reaches memory, and unavailable hardware/models produce health degradation without crashing the app.
+
+- [ ] **Step 5: Commit live visual runtime**
+
+```powershell
+git add backend/src/social_lamp/capture backend/src/social_lamp/perception backend/src/social_lamp/runtime tests/runtime
+git commit -m "feat: add live camera and visual inference runtime"
+```
+
+### Task 23: Add the live microphone stream and audio analyzer runtime
+
+**Files:**
+- Modify: `backend/src/social_lamp/audio/analysis.py`
+- Modify: `backend/src/social_lamp/runtime/coordinator.py`
+- Add: `backend/src/social_lamp/audio/stream.py`
+- Add: `tests/runtime/test_live_audio_pipeline.py`
+
+- [ ] **Step 1: Write failing runtime tests for microphone-driven observations**
+
+Add tests that feed 20 ms fake microphone chunks through the runtime and assert voice activity, interruption, speaker association, affect gating, and microphone health are emitted into runtime state. Include a test for simulator-speech interruption causing cancellation and listen priority escalation.
+
+- [ ] **Step 2: Run the tests to confirm live audio is not connected**
+
+Run: `uv run pytest tests/runtime/test_live_audio_pipeline.py tests/audio/test_analysis.py -v`
+
+Expected: FAIL because the analyzer exists only as primitives and no microphone stream feeds it through the coordinator.
+
+- [ ] **Step 3: Implement the live audio stream worker**
+
+Add a `sounddevice` stream that reads bounded 20 ms chunks, routes them through the existing analyzer primitives, publishes typed audio observations, and keeps raw audio ephemeral. Connect simulator speaking state to audio cancellation so live interruption behavior is real rather than test-only.
+
+Preserve offline and replay operation when no microphone is available by surfacing degraded health and leaving text/replay controls functional.
+
+- [ ] **Step 4: Verify live audio behavior and fallback**
+
+Run:
+
+```powershell
+uv run pytest tests/audio tests/runtime/test_live_audio_pipeline.py -v
+```
+
+Expected: microphone chunks drive analyzer output, simulator interruption is cancellable, and missing devices degrade health without failing application startup.
+
+- [ ] **Step 5: Commit live audio runtime**
+
+```powershell
+git add backend/src/social_lamp/audio backend/src/social_lamp/runtime tests/runtime
+git commit -m "feat: add live microphone and audio analysis runtime"
+```
+
+### Task 24: Complete the simulator adapter transport and live WebSocket state flow
+
+**Files:**
+- Modify: `backend/src/social_lamp/api/hub.py`
+- Modify: `backend/src/social_lamp/api/app.py`
+- Modify: `backend/src/social_lamp/adapters/simulator.py`
+- Modify: `backend/src/social_lamp/runtime/coordinator.py`
+- Add: `tests/api/test_websocket_streaming.py`
+
+- [ ] **Step 1: Write failing API tests for sequenced streaming and adapter acknowledgements**
+
+Add tests that connect to `/ws`, trigger replay or live runtime updates, and assert the socket receives sequenced `world_snapshot`, `behavior_timeline`, `metric`, `memory_result`, and `fault` envelopes. Add tests that simulate client acknowledgements for rendered, completed, and cancelled timelines.
+
+- [ ] **Step 2: Run the tests to prove the live transport is incomplete**
+
+Run: `uv run pytest tests/api/test_websocket_streaming.py -v`
+
+Expected: FAIL because the current socket sends only the initial snapshot, and the simulator adapter is broadcast-only with no acknowledgement or execution-state feedback.
+
+- [ ] **Step 3: Implement real-time transport semantics**
+
+Add sequence numbering to all WebSocket envelopes and broadcast world snapshots whenever stable runtime state changes. Extend the simulator adapter so the browser client acknowledges receipt, first rendered frame, completion, and cancellation; use those acknowledgements to track adapter health and visible execution latency.
+
+Preserve loopback-only access for this release and degrade gracefully when no browser client is connected by retaining intended timelines and reporting degraded adapter health.
+
+- [ ] **Step 4: Verify end-to-end streaming behavior**
+
+Run:
+
+```powershell
+uv run pytest tests/api/test_websocket_streaming.py tests/api/test_app.py -v
+```
+
+Expected: sockets receive sequenced updates, adapter acknowledgements round-trip correctly, and disconnects degrade health without breaking replay or text commands.
+
+- [ ] **Step 5: Commit simulator transport completion**
+
+```powershell
+git add backend/src/social_lamp/api backend/src/social_lamp/adapters backend/src/social_lamp/runtime tests/api
+git commit -m "feat: complete websocket state streaming and simulator acknowledgements"
+```
+
+### Task 25: Wire the frontend to backend state and dynamic replay controls
+
+**Files:**
+- Modify: `frontend/src/App.tsx`
+- Modify: `frontend/src/state/store.ts`
+- Modify: `frontend/src/components/DemoRail.tsx`
+- Modify: `frontend/src/components/Inspector.tsx`
+- Add: `frontend/src/lib/api.ts`
+- Add: `frontend/src/lib/socket.ts`
+- Add: `frontend/src/App.test.tsx`
+
+- [ ] **Step 1: Write failing frontend tests for backend-driven state**
+
+Add tests that mock `/api/health`, `/api/world`, `GET /api/replays`, and `/ws`, then assert the app renders replay buttons from backend data, updates proof state from reducer output, and derives lamp pose from live timelines rather than static fixtures.
+
+- [ ] **Step 2: Run the tests to prove the frontend is still mostly hardcoded**
+
+Run: `pnpm --dir frontend test -- --run`
+
+Expected: FAIL because `App.tsx` still renders from `initialState` and local button handlers instead of backend fetch/WebSocket state.
+
+- [ ] **Step 3: Replace local proof state with runtime-backed state**
+
+Use `/api/health` and `/api/world` for initial bootstrap, `GET /api/replays` for replay selection, and `/ws` as the live event source. Treat `frontend/src/state/store.ts` as the single reducer for snapshots, timelines, evidence, metrics, and faults; derive lamp pose from incoming timelines and connection status from socket lifecycle.
+
+Replay proof controls must call backend APIs and mark steps complete only from correlated backend evidence, not from click handlers or hardcoded strings.
+
+- [ ] **Step 4: Verify frontend integration and build**
+
+Run:
+
+```powershell
+pnpm --dir frontend test -- --run
+pnpm --dir frontend exec tsc --noEmit
+pnpm --dir frontend build
+```
+
+Expected: frontend tests pass with backend-driven state, TypeScript stays clean, and the dashboard still builds with live connection handling.
+
+- [ ] **Step 5: Commit frontend live integration**
+
+```powershell
+git add frontend/src
+git commit -m "feat: wire frontend to backend state and replay controls"
+```
+
+### Task 26: Enable persistent runtime memory and trace operation in normal app mode
+
+**Files:**
+- Modify: `backend/src/social_lamp/memory/repository.py`
+- Modify: `backend/src/social_lamp/replay/trace.py`
+- Modify: `backend/src/social_lamp/runtime/coordinator.py`
+- Modify: `backend/src/social_lamp/api/app.py`
+- Add: `tests/runtime/test_persistent_runtime_memory.py`
+
+- [ ] **Step 1: Write failing integration tests for real runtime persistence**
+
+Add tests that run the live runtime against a temporary SQLite path, inject stable object observations, submit text recall, clear memory, and export traces. Assert that evidence rows persist across runtime operations and that trace export uses the active runtime session rather than replay fixture input.
+
+- [ ] **Step 2: Run the tests to confirm persistence is not the default app path**
+
+Run: `uv run pytest tests/runtime/test_persistent_runtime_memory.py tests/memory/test_repository.py -v`
+
+Expected: FAIL because the app path still relies on test runtime wiring and replay-oriented trace export behavior.
+
+- [ ] **Step 3: Connect persistence to the real runtime**
+
+Use the configured database path and trace session as the normal runtime path. Ensure stable live observations create durable memory evidence, text recall queries use persisted runtime data, `POST /api/memory/clear` clears the active repository, and `POST /api/traces/export` exports the active trace without breaking replay determinism.
+
+Disable preference exploration and any nondeterministic runtime branches during replay and evaluation so event fixtures remain reproducible.
+
+- [ ] **Step 4: Verify runtime persistence behavior**
+
+Run:
+
+```powershell
+uv run pytest tests/memory tests/replay tests/runtime/test_persistent_runtime_memory.py -v
+```
+
+Expected: live/runtime evidence persists, recall uses stored facts, clear/export operate on the active runtime, and replay determinism remains intact.
+
+- [ ] **Step 5: Commit runtime persistence**
+
+```powershell
+git add backend/src/social_lamp/memory backend/src/social_lamp/replay backend/src/social_lamp/runtime backend/src/social_lamp/api tests/runtime
+git commit -m "feat: persist runtime memory and traces in app mode"
+```
+
+### Task 27: Re-prove the project as a functional local-first demo
+
+**Files:**
+- Modify: `frontend/e2e/core-journey.spec.ts`
+- Modify: `frontend/e2e/bonuses.spec.ts`
+- Add: `tests/runtime/test_demo_acceptance.py`
+- Modify: `docs/DEMO.md`
+- Modify: `README.md`
+
+- [ ] **Step 1: Write failing acceptance tests for backend-driven proof**
+
+Update Playwright and backend integration tests so replay proof, bonus proof, and runtime-driven UI states all depend on backend evidence rather than local frontend shortcuts. Add one integration test that exercises the live runtime through fakes without requiring physical hardware in CI.
+
+- [ ] **Step 2: Run the tests to reveal remaining fake/demo shortcuts**
+
+Run:
+
+```powershell
+uv run pytest tests/runtime/test_demo_acceptance.py -v
+pnpm e2e
+```
+
+Expected: FAIL until backend-driven state, persistence, streaming, and replay/live coexistence are fully wired.
+
+- [ ] **Step 3: Rework the demo documentation and acceptance bar**
+
+Update the demo and README guidance so the release proof is explicit: one real local webcam/microphone run, one offline replay run, persistent memory recall from stored evidence, visible simulator output in the browser, live WebSocket state updates, and exported traces/evaluation artifacts.
+
+- [ ] **Step 4: Run the full functional-demo verification**
+
+Run:
+
+```powershell
+uv sync --locked
+pnpm install --frozen-lockfile
+uv run ruff check backend tests
+uv run ruff format --check backend tests
+uv run mypy
+uv run pytest -q
+pnpm --dir frontend test -- --run
+pnpm --dir frontend exec tsc --noEmit
+pnpm --dir frontend build
+pnpm e2e
+uv run python -m social_lamp.evaluation.cli --fixture evaluation/fixtures/core-journey --output output/evaluation
+git diff --check
+```
+
+Expected: all automated checks pass, replay proof remains deterministic, the live runtime path is integrated, and the resulting app qualifies as a functional local-first demo rather than a replay-only proof shell.
+
+- [ ] **Step 5: Commit final functional-demo proof**
+
+```powershell
+git add README.md docs/DEMO.md frontend/e2e tests/runtime
+git commit -m "test: prove functional local-first demo behavior"
+```
