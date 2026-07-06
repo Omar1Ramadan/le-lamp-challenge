@@ -1,6 +1,7 @@
 {
   "name": "simulated-social-lamp",
   "private": true,
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev:web": "pnpm --dir frontend dev",
     "test:web": "pnpm --dir frontend test -- --run",
