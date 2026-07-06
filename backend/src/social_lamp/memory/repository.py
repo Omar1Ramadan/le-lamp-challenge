@@ -115,6 +115,24 @@ class MemoryRepository:
             return 0
         return int(row["count"])
 
+    async def clear(self) -> None:
+        await self._connection.execute("BEGIN")
+        try:
+            for table in (
+                "observation_aliases",
+                "last_known_objects",
+                "observations",
+                "object_tracks",
+                "sessions",
+                "preference_audit",
+                "behavior_preferences",
+            ):
+                await self._connection.execute(f"DELETE FROM {table}")
+            await self._connection.commit()
+        except Exception:
+            await self._connection.rollback()
+            raise
+
     async def record_preference_update(
         self,
         *,

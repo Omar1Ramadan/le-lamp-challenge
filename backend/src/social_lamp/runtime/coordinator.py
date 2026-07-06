@@ -21,7 +21,8 @@ from social_lamp.replay.trace import TraceReader
 
 
 class SimulatorPort(Protocol):
-    pose: dict[str, float]
+    @property
+    def pose(self) -> dict[str, float]: ...
 
     async def execute(self, timeline: BehaviorTimeline) -> object: ...
 
@@ -74,6 +75,7 @@ class RuntimeCoordinator:
         self._compositor = compositor or BehaviorCompositor()
         self._running = False
         self._tasks: set[asyncio.Task[None]] = set()
+        self._resources_closed = False
         self.bonuses_enabled = False
 
     @classmethod
@@ -87,9 +89,14 @@ class RuntimeCoordinator:
         return self._running
 
     async def start(self) -> None:
+        if self._resources_closed:
+            raise RuntimeError("runtime resources are already closed")
         self._running = True
 
     async def stop(self) -> None:
+        if self._resources_closed:
+            self._running = False
+            return
         self._running = False
         for task in self._tasks:
             task.cancel()
@@ -99,6 +106,7 @@ class RuntimeCoordinator:
         await self.simulator.neutralize()
         await self.conversation.close("runtime stopping")
         await self.memory.close()
+        self._resources_closed = True
 
     async def replay(self, directory: Path) -> None:
         previous = self.world.snapshot

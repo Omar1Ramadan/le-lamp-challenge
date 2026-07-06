@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from social_lamp.api.hub import ConnectionHub
 from social_lamp.runtime.coordinator import RuntimeCoordinator
+from social_lamp.runtime.live import build_live_runtime
 
 
 class ReplayRequest(BaseModel):
@@ -31,12 +32,14 @@ class TraceExportRequest(BaseModel):
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "testclient", "localhost"}
 
 
-def create_app() -> FastAPI:
-    coordinator = RuntimeCoordinator.for_test(database=Path(".runtime/memory.db"))
+def create_app(*, database_path: Path | None = None) -> FastAPI:
     hub = ConnectionHub()
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        coordinator = await build_live_runtime(database_path=database_path, hub=hub)
+        app.state.world = coordinator.world
+        app.state.coordinator = coordinator
         await coordinator.start()
         try:
             yield
@@ -44,9 +47,7 @@ def create_app() -> FastAPI:
             await coordinator.stop()
 
     app = FastAPI(title="Simulated Social Lamp", version="0.1.0", lifespan=lifespan)
-    app.state.world = coordinator.world
     app.state.hub = hub
-    app.state.coordinator = coordinator
 
     @app.middleware("http")
     async def loopback_only(
@@ -62,49 +63,59 @@ def create_app() -> FastAPI:
         return {"status": "healthy"}
 
     @app.get("/api/world")
-    async def current_world() -> dict[str, object]:
+    async def current_world(request: Request) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
         return cast(dict[str, object], coordinator.world.snapshot.model_dump(mode="json"))
 
     @app.post("/api/session/start")
-    async def start_session() -> dict[str, object]:
+    async def start_session(request: Request) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
         await coordinator.start()
         return {"ok": True, "running": coordinator.running}
 
     @app.post("/api/session/stop")
-    async def stop_session() -> dict[str, object]:
+    async def stop_session(request: Request) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
         await coordinator.stop()
         return {"ok": True, "running": coordinator.running}
 
     @app.post("/api/replay")
-    async def replay(request: ReplayRequest) -> dict[str, object]:
-        await coordinator.replay(Path(request.directory))
+    async def replay(request: Request, body: ReplayRequest) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
+        await coordinator.replay(Path(body.directory))
         return {"ok": True, "revision": coordinator.world.snapshot.revision}
 
     @app.post("/api/text")
-    async def submit_text(request: TextRequest) -> dict[str, object]:
-        response = await coordinator.submit_text(request.text)
+    async def submit_text(request: Request, body: TextRequest) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
+        response = await coordinator.submit_text(body.text)
         return {"ok": True, "response": response.__dict__}
 
     @app.post("/api/neutralize")
-    async def neutralize() -> dict[str, object]:
+    async def neutralize(request: Request) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
         await coordinator.neutralize()
         return {"ok": True}
 
     @app.post("/api/memory/clear")
-    async def clear_memory() -> dict[str, object]:
+    async def clear_memory(request: Request) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
         await coordinator.clear_memory()
         return {"ok": True}
 
     @app.post("/api/bonuses")
-    async def toggle_bonuses(request: ToggleRequest) -> dict[str, object]:
-        return {"ok": True, "enabled": coordinator.set_bonuses(request.enabled)}
+    async def toggle_bonuses(request: Request, body: ToggleRequest) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
+        return {"ok": True, "enabled": coordinator.set_bonuses(body.enabled)}
 
     @app.post("/api/traces/export")
-    async def export_trace(request: TraceExportRequest) -> dict[str, object]:
-        return {"ok": True, "trace": coordinator.export_trace(Path(request.directory))}
+    async def export_trace(request: Request, body: TraceExportRequest) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
+        return {"ok": True, "trace": coordinator.export_trace(Path(body.directory))}
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
+        coordinator = _coordinator(websocket.app)
         await hub.connect(websocket)
         await websocket.send_json(
             {"type": "world_snapshot", "body": coordinator.world.snapshot.model_dump(mode="json")}
@@ -116,3 +127,7 @@ def create_app() -> FastAPI:
             hub.disconnect(websocket)
 
     return app
+
+
+def _coordinator(app: FastAPI) -> RuntimeCoordinator:
+    return cast(RuntimeCoordinator, app.state.coordinator)
