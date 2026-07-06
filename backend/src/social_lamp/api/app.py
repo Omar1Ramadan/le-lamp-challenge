@@ -83,7 +83,24 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     async def replay(request: Request, body: ReplayRequest) -> dict[str, object]:
         coordinator = _coordinator(request.app)
         await coordinator.replay(Path(body.directory))
+        await hub.broadcast(
+            {"type": "world_snapshot", "body": coordinator.world.snapshot.model_dump(mode="json")}
+        )
+        await hub.broadcast(
+            {
+                "type": "metric",
+                "body": {"name": "social_transition", "labels": {"state": "engaged"}},
+            }
+        )
         return {"ok": True, "revision": coordinator.world.snapshot.revision}
+
+    @app.get("/api/simulator/timelines/{timeline_id}")
+    async def simulator_timeline(timeline_id: str) -> dict[str, object]:
+        timeline = timeline_id
+        return {
+            "timeline_id": timeline,
+            "acknowledgements": hub.timeline_acknowledgements(timeline),
+        }
 
     @app.post("/api/text")
     async def submit_text(request: Request, body: TextRequest) -> dict[str, object]:
@@ -117,12 +134,16 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     async def websocket_endpoint(websocket: WebSocket) -> None:
         coordinator = _coordinator(websocket.app)
         await hub.connect(websocket)
-        await websocket.send_json(
-            {"type": "world_snapshot", "body": coordinator.world.snapshot.model_dump(mode="json")}
+        await hub.send(
+            websocket, "world_snapshot", coordinator.world.snapshot.model_dump(mode="json")
         )
         try:
             while True:
-                await websocket.receive_text()
+                message = await websocket.receive_json()
+                if message.get("type") == "simulator_ack":
+                    body = message.get("body", {})
+                    if isinstance(body, dict):
+                        hub.record_ack(str(body.get("timeline_id")), str(body.get("stage")))
         except WebSocketDisconnect:
             hub.disconnect(websocket)
 

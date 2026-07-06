@@ -157,6 +157,12 @@ class RuntimeCoordinator:
             if intent is not None:
                 timeline = self._compositor.compose(intent, self.simulator.pose)
                 await self.simulator.execute(timeline)
+                health = getattr(self.simulator, "health", None)
+                if isinstance(health, ComponentHealth):
+                    current = current.model_copy(
+                        update={"health": _replace_health(current.health, health)}
+                    )
+                    self.world.replace(current)
             self.metrics.increment("social_transition", state=current.social_state.value)
             previous = current
 
