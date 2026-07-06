@@ -29,7 +29,7 @@ from social_lamp.perception.engagement import EngagementEstimator
 from social_lamp.perception.faces import FaceResult, face_result_to_signals
 from social_lamp.perception.location import BBox, locate_box
 from social_lamp.perception.objects import Detection, ObjectTrack
-from social_lamp.replay.trace import TraceReader
+from social_lamp.replay.trace import TraceManifest, TraceReader, TraceRecord, write_trace
 
 
 class SimulatorPort(Protocol):
@@ -308,6 +308,24 @@ class RuntimeCoordinator:
         return self.bonuses_enabled
 
     def export_trace(self, directory: Path) -> dict[str, object]:
+        snapshot = self.world.snapshot
+        write_trace(
+            directory,
+            manifest=TraceManifest(
+                schema_version="1.0",
+                application_version="runtime",
+                session_id=str(snapshot.session_id),
+                configuration_hash="local",
+            ),
+            records=(
+                TraceRecord(
+                    sequence=1,
+                    record_type="snapshot",
+                    recorded_at_mono_ns=snapshot.as_of_mono_ns,
+                    body=snapshot.model_dump(mode="json"),
+                ),
+            ),
+        )
         reader = TraceReader(directory)
         return {
             "manifest": reader.manifest().__dict__,

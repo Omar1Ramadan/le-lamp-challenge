@@ -63,6 +63,26 @@ class TraceWriter:
         (self._directory / "events.sha256").write_text(digest, encoding="ascii")
 
 
+def write_trace(
+    directory: Path, *, manifest: TraceManifest, records: tuple[TraceRecord, ...]
+) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    _validate_manifest(manifest)
+    (directory / "manifest.json").write_text(
+        json.dumps(asdict(manifest), sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    content = "\n".join(
+        json.dumps(asdict(record), sort_keys=True, separators=(",", ":")) for record in records
+    )
+    if content:
+        content += "\n"
+    events_path = directory / "events.jsonl"
+    events_path.write_bytes(content.encode())
+    digest = hashlib.sha256(events_path.read_bytes()).hexdigest()
+    (directory / "events.sha256").write_text(digest, encoding="ascii")
+
+
 class TraceReader:
     def __init__(self, directory: Path) -> None:
         self._directory = directory
