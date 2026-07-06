@@ -4,13 +4,13 @@ import { initialState, reduceServerMessage } from "./store";
 describe("reduceServerMessage", () => {
   it("replaces state from a full snapshot and detects sequence gaps", () => {
     const first = reduceServerMessage(initialState, {
-      sequence: 1,
+      seq: 1,
       type: "world_snapshot",
       body: { revision: 4, social_state: "engaged", people: [], objects: [], health: [] },
     });
     expect(first.world?.revision).toBe(4);
     const gap = reduceServerMessage(first, {
-      sequence: 3,
+      seq: 3,
       type: "metric",
       body: { name: "frame_age_ms", value: 20 },
     });

@@ -1,48 +1,74 @@
-import { useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 
 import "./App.css";
 import { DemoRail } from "./components/DemoRail";
 import { EvidenceTimeline } from "./components/EvidenceTimeline";
-import { Inspector } from "./components/Inspector";
+import { Inspector, type InspectorEvidence } from "./components/Inspector";
 import { PerceptionPanel } from "./components/PerceptionPanel";
+import { getHealth, getReplays, getWorld, runReplay, submitText, type ReplaySummary } from "./lib/api";
+import { connectSocket } from "./lib/socket";
 import { LampScene } from "./scene/LampScene";
-import { initialLampStore, initialState } from "./state/store";
+import {
+  initialLampStore,
+  initialState,
+  poseFromTimeline,
+  reduceServerMessage,
+  type DashboardState,
+  type DashboardWorldSnapshot,
+  type ServerMessage,
+} from "./state/store";
 
-type JourneyState = "idle" | "loaded";
+function dashboardReducer(state: DashboardState, message: ServerMessage) {
+  return reduceServerMessage(state, message);
+}
 
 function App() {
-  const [journey, setJourney] = useState<JourneyState>("idle");
+  const [state, dispatch] = useReducer(dashboardReducer, initialState);
+  const [connection, setConnection] = useState(initialLampStore.connection);
+  const [replays, setReplays] = useState<ReplaySummary[]>([]);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
-  const [showEvidence, setShowEvidence] = useState(false);
-  const [bonusLoaded, setBonusLoaded] = useState(false);
-  const world = initialState.world;
-  const journeyLoaded = journey === "loaded";
+  const world = state.world;
+  const pose = useMemo(() => poseFromTimeline(state.timeline), [state.timeline]);
+  const evidence = useMemo(() => inspectorEvidence(state.evidence), [state.evidence]);
 
-  function loadCoreJourney() {
-    setJourney("loaded");
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([getHealth(), getWorld<DashboardWorldSnapshot>(), getReplays()])
+      .then(([, snapshot, replayList]) => {
+        if (cancelled) {
+          return;
+        }
+        setReplays(replayList);
+        dispatch({ seq: 1, type: "world_snapshot", body: snapshot });
+      })
+      .catch(() => setConnection("offline"));
+
+    const socket = connectSocket((message) => dispatch(message));
+    socket.onopen = () => setConnection("connected");
+    socket.onclose = () => setConnection("offline");
+    setConnection("connecting");
+    return () => {
+      cancelled = true;
+      socket.close();
+    };
+  }, []);
+
+  async function loadReplay(replay: ReplaySummary) {
     setAnswer("");
-    setShowEvidence(false);
+    await runReplay(replay.directory);
   }
 
-  function askLamp() {
-    if (question.toLowerCase().includes("keys")) {
-      setAnswer("I last saw the keys on the right side of the desk.");
-    } else {
-      setAnswer("I do not have reliable evidence for that.");
-    }
-  }
-
-  function loadBonusJourney() {
-    setBonusLoaded(true);
+  async function askLamp() {
+    setAnswer(await submitText(question));
   }
 
   return (
     <main className="app-shell">
       <section className="status-banner" aria-live="polite">
         <span className="status-dot" />
-        Simulator connection: {initialLampStore.connection}
+        Simulator connection: {connection}
       </section>
       <section className="dashboard-grid">
         <section className="viewport" aria-label="Simulated social lamp viewport">
@@ -50,31 +76,36 @@ function App() {
             <color attach="background" args={["#101522"]} />
             <ambientLight intensity={0.7} />
             <directionalLight position={[3, 5, 4]} intensity={1.8} />
-            <LampScene pose={initialLampStore.pose} />
+            <LampScene pose={pose} />
           </Canvas>
         </section>
         <PerceptionPanel people={world?.people ?? []} objects={world?.objects ?? []} />
-        <EvidenceTimeline evidence={initialState.evidence} />
+        <EvidenceTimeline evidence={state.evidence} />
         <Inspector
-          state={journeyLoaded ? "seeking_attention" : (world?.social_state ?? "idle")}
-          evidence={[]}
+          state={world?.social_state ?? "idle"}
+          evidence={evidence}
           health={world?.health ?? []}
         />
-        <DemoRail metrics={initialState.metrics} needsResync={initialState.needsResync} />
+        <DemoRail metrics={state.metrics} needsResync={state.needsResync} />
         <section className="panel demo-proof" aria-label="Replay proof controls">
           <h2>Replay proof</h2>
-          <button type="button" onClick={loadCoreJourney}>Load core journey replay</button>
-          <div data-testid="demo-step-engagement" data-complete={journeyLoaded ? "true" : "false"}>
+          {replays.map((replay) => (
+            <button type="button" key={replay.id} onClick={() => void loadReplay(replay)}>
+              {replay.label}
+            </button>
+          ))}
+          <div
+            data-testid="demo-step-engagement"
+            data-complete={world?.social_state === "engaged" ? "true" : "false"}
+          >
             Engagement
           </div>
-          <div data-testid="demo-step-attention" data-complete={journeyLoaded ? "true" : "false"}>
-            {journeyLoaded ? "Seeking attention: level 1" : "Attention pending"}
+          <div
+            data-testid="demo-step-attention"
+            data-complete={state.timeline ? "true" : "false"}
+          >
+            {state.timeline ? "Seeking attention: live timeline received" : "Attention pending"}
           </div>
-          {journeyLoaded ? (
-            <article aria-label="memory: keys">
-              Memory: keys observed on the right side of the desk.
-            </article>
-          ) : null}
           <label>
             Ask the lamp
             <input
@@ -83,27 +114,30 @@ function App() {
               aria-label="Ask the lamp"
             />
           </label>
-          <button type="button" onClick={askLamp}>Ask</button>
+          <button type="button" onClick={() => void askLamp()}>
+            Ask
+          </button>
           <p data-testid="lamp-answer">{answer}</p>
-          <button type="button" onClick={() => setShowEvidence(true)}>Show evidence</button>
-          {showEvidence ? <p>observation-core-keys-2</p> : null}
-        </section>
-        <section className="panel bonus-proof" aria-label="Bonus proof controls">
-          <h2>Bonus proof</h2>
-          <button type="button" onClick={loadBonusJourney}>Load bonus journey replay</button>
-          {bonusLoaded ? (
-            <ul>
-              <li>Active speaker: Person B</li>
-              <li>Affect confidence gated below 0.60</li>
-              <li>Preference score changed then reset</li>
-              <li>Speech interruption cancellation under 120 ms</li>
-              <li>Television suppression active</li>
-            </ul>
-          ) : null}
         </section>
       </section>
     </main>
   );
+}
+
+function inspectorEvidence(evidence: DashboardState["evidence"]): InspectorEvidence[] {
+  return evidence.flatMap((item) => {
+    if (item.status !== "found" || !item.canonical_label) {
+      return [];
+    }
+    const location = [item.horizontal_region, item.depth_band, item.anchor_name]
+      .filter(Boolean)
+      .join(" / ");
+    return (item.evidence_ids ?? [item.canonical_label]).map((id) => ({
+      id,
+      label: item.canonical_label ?? "unknown",
+      location,
+    }));
+  });
 }
 
 export default App;

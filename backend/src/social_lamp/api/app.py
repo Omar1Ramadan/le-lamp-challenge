@@ -67,6 +67,21 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
         coordinator = _coordinator(request.app)
         return cast(dict[str, object], coordinator.world.snapshot.model_dump(mode="json"))
 
+    @app.get("/api/replays")
+    def replays() -> dict[str, object]:
+        fixture_root = Path("evaluation/fixtures")
+        items = []
+        if fixture_root.exists():
+            for directory in sorted(path for path in fixture_root.iterdir() if path.is_dir()):
+                items.append(
+                    {
+                        "id": directory.name,
+                        "label": directory.name.replace("-", " ").title(),
+                        "directory": str(directory),
+                    }
+                )
+        return {"replays": items}
+
     @app.post("/api/session/start")
     async def start_session(request: Request) -> dict[str, object]:
         coordinator = _coordinator(request.app)

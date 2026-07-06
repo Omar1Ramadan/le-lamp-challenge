@@ -1,4 +1,4 @@
-import type { BehaviorTimeline, LampPose, MotionChannel } from "../contracts/domain";
+import type { LampPose, MotionChannel } from "../contracts/domain";
 import type {
   BehaviorTimeline as DashboardTimeline,
   MemoryResult,
@@ -12,7 +12,7 @@ export type ConnectionState = "connecting" | "connected" | "offline";
 export interface LampStoreSnapshot {
   connection: ConnectionState;
   pose: LampPose;
-  timeline: BehaviorTimeline | null;
+  timeline: DashboardTimeline | null;
 }
 
 export const initialLampStore: LampStoreSnapshot = {
@@ -21,7 +21,7 @@ export const initialLampStore: LampStoreSnapshot = {
   timeline: null,
 };
 
-export function poseFromTimeline(timeline: BehaviorTimeline | null): LampPose {
+export function poseFromTimeline(timeline: DashboardTimeline | null): LampPose {
   const pose = neutralPose();
   if (timeline === null) {
     return pose;
@@ -37,7 +37,8 @@ export function poseFromTimeline(timeline: BehaviorTimeline | null): LampPose {
 
 interface MetricBody {
   name: string;
-  value: number;
+  value?: number;
+  labels?: Record<string, string>;
 }
 
 interface FaultBody {
@@ -64,12 +65,12 @@ export interface DashboardState {
 }
 
 export type ServerMessage =
-  | { sequence: number; type: "world_snapshot"; body: DashboardWorldSnapshot }
-  | { sequence: number; type: "behavior_timeline"; body: DashboardTimeline }
-  | { sequence: number; type: "observation"; body: ObservationEvent }
-  | { sequence: number; type: "memory_result"; body: MemoryResult }
-  | { sequence: number; type: "metric"; body: MetricBody }
-  | { sequence: number; type: "fault"; body: FaultBody };
+  | { seq: number; type: "world_snapshot"; body: DashboardWorldSnapshot }
+  | { seq: number; type: "behavior_timeline"; body: DashboardTimeline }
+  | { seq: number; type: "observation"; body: ObservationEvent }
+  | { seq: number; type: "memory_result"; body: MemoryResult }
+  | { seq: number; type: "metric"; body: MetricBody }
+  | { seq: number; type: "fault"; body: FaultBody };
 
 export const initialState: DashboardState = {
   world: null,
@@ -85,10 +86,10 @@ export function reduceServerMessage(
   state: DashboardState,
   message: ServerMessage,
 ): DashboardState {
-  const gap = state.lastSequence !== 0 && message.sequence !== state.lastSequence + 1;
+  const gap = state.lastSequence !== 0 && message.seq !== state.lastSequence + 1;
   const next = {
     ...state,
-    lastSequence: message.sequence,
+    lastSequence: message.seq,
     needsResync: state.needsResync || gap,
   };
   switch (message.type) {
@@ -99,7 +100,13 @@ export function reduceServerMessage(
     case "memory_result":
       return { ...next, evidence: [...state.evidence, message.body] };
     case "metric":
-      return { ...next, metrics: { ...state.metrics, [message.body.name]: message.body.value } };
+      return {
+        ...next,
+        metrics: {
+          ...state.metrics,
+          [message.body.name]: message.body.value ?? (state.metrics[message.body.name] ?? 0) + 1,
+        },
+      };
     case "fault":
       return { ...next, faults: [...state.faults, message.body] };
     case "observation":

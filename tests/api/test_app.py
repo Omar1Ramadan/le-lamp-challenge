@@ -16,3 +16,11 @@ def test_websocket_receives_initial_snapshot() -> None:
             message = socket.receive_json()
             assert message["type"] == "world_snapshot"
             assert message["body"]["revision"] == 0
+
+
+def test_replays_endpoint_lists_local_fixtures() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get("/api/replays")
+        assert response.status_code == 200
+        replay_ids = {item["id"] for item in response.json()["replays"]}
+        assert "core-journey" in replay_ids
