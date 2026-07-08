@@ -39,10 +39,15 @@ function App() {
   const [replays, setReplays] = useState<ReplaySummary[]>([]);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
+  const [lampAction, setLampAction] = useState("Lamp is neutral.");
+  const [timelineElapsedMs, setTimelineElapsedMs] = useState(0);
   const [showEvidence, setShowEvidence] = useState(false);
   const [sessionRunning, setSessionRunning] = useState(true);
   const world = state.world;
-  const pose = useMemo(() => poseFromTimeline(state.timeline), [state.timeline]);
+  const pose = useMemo(
+    () => poseFromTimeline(state.timeline, timelineElapsedMs),
+    [state.timeline, timelineElapsedMs],
+  );
   const evidence = useMemo(() => inspectorEvidence(state.evidence), [state.evidence]);
 
   useEffect(() => {
@@ -66,6 +71,24 @@ function App() {
       socket.close();
     };
   }, []);
+
+  useEffect(() => {
+    if (!state.timeline) {
+      setTimelineElapsedMs(0);
+      return;
+    }
+    let animationFrame = 0;
+    const startedAt = performance.now();
+    const tick = () => {
+      const elapsed = performance.now() - startedAt;
+      setTimelineElapsedMs(elapsed);
+      if (elapsed < state.timeline!.duration_ms) {
+        animationFrame = window.requestAnimationFrame(tick);
+      }
+    };
+    animationFrame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [state.timeline]);
 
   async function loadReplay(replay: ReplaySummary) {
     setAnswer("");
@@ -98,10 +121,21 @@ function App() {
             <directionalLight position={[3, 5, 4]} intensity={1.8} />
             <LampScene pose={pose} />
           </Canvas>
+          <div className="lamp-action" aria-live="polite">
+            {lampAction}
+          </div>
         </section>
         <PerceptionPanel people={world?.people ?? []} objects={world?.objects ?? []} />
         <EvidenceTimeline evidence={state.evidence} />
         <DevicePanel
+          onBehaviorTimeline={(timeline) => {
+            dispatch({
+              seq: state.lastSequence + 2,
+              type: "behavior_timeline",
+              body: timeline,
+            });
+            setLampAction(`Lamp action: visible ${timeline.duration_ms} ms response.`);
+          }}
           onWorldSnapshot={(snapshot) =>
             dispatch({ seq: state.lastSequence + 1, type: "world_snapshot", body: snapshot })
           }

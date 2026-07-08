@@ -51,7 +51,12 @@ export async function stopSession(): Promise<{ ok: boolean; running: boolean }> 
 
 export async function uploadVisionFrame<T>(
   imageBase64: string,
-): Promise<{ ok: boolean; world_snapshot?: T }> {
+): Promise<{
+  behavior_timeline?: unknown;
+  ok: boolean;
+  vision_debug?: unknown;
+  world_snapshot?: T;
+}> {
   return fetchJson("/api/vision/frame", {
     body: JSON.stringify({ image_base64: imageBase64 }),
     headers: { "Content-Type": "application/json" },

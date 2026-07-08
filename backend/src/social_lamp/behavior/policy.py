@@ -53,6 +53,7 @@ class BehaviorPolicy:
         if previous.social_state is current.social_state:
             return None
         mapping = {
+            SocialState.CANDIDATE: ("orient", 50),
             SocialState.ENGAGED: ("acknowledge", 60),
             SocialState.DISENGAGED: ("disengage", 60),
             SocialState.SEEKING_ATTENTION: ("seek_attention", 40),

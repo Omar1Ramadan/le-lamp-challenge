@@ -123,6 +123,7 @@ class RuntimeCoordinator:
         self._object_tracks: dict[str, ObjectTrack] = {}
         self._recorded_stable_tracks: set[str] = set()
         self._audio_analyzer = AudioAnalyzer()
+        self._engagement_estimator = EngagementEstimator()
         self.audio_state = AudioState(False, False, None)
         self.bonuses_enabled = False
         self.replay_messages: list[tuple[str, dict[str, object]]] = []
@@ -451,7 +452,7 @@ class RuntimeCoordinator:
         face_processor: object,
         object_detector: object,
         anchors: dict[str, BBox],
-    ) -> None:
+    ) -> BehaviorTimeline | None:
         snapshot = self.world.snapshot
         try:
             faces = tuple(face_processor.process(frame, now_mono_ns=frame.mono_ns))  # type: ignore[attr-defined]
@@ -470,9 +471,19 @@ class RuntimeCoordinator:
                 )
             )
             await self._publish_snapshot(self.world.snapshot)
-            return
+            return None
 
-        people = (_person_from_face(faces[0]),) if faces else ()
+        if faces:
+            person, social_state = _person_from_face(
+                faces[0], self._engagement_estimator, frame.mono_ns
+            )
+            people = (person,)
+            primary_person_id = "person-1"
+        else:
+            people = ()
+            social_state = SocialState.DISENGAGED if snapshot.people else SocialState.IDLE
+            primary_person_id = None
+
         objects: list[ObjectState] = []
         for detection in detections:
             track_id = f"track-{detection.label.strip().lower().replace(' ', '-')}"
@@ -502,21 +513,29 @@ class RuntimeCoordinator:
                 )
                 self._recorded_stable_tracks.add(track.track_id)
 
-        self.world.replace(
-            snapshot.model_copy(
-                update={
-                    "snapshot_id": uuid7(),
-                    "revision": snapshot.revision + 1,
-                    "as_of_mono_ns": frame.mono_ns,
-                    "people": people,
-                    "objects": tuple(objects) if objects else snapshot.objects,
-                    "health": _replace_health(
-                        snapshot.health, ComponentHealth(component="vision", status="ok")
-                    ),
-                }
-            )
+        current = snapshot.model_copy(
+            update={
+                "snapshot_id": uuid7(),
+                "revision": snapshot.revision + 1,
+                "as_of_mono_ns": frame.mono_ns,
+                "social_state": social_state,
+                "primary_person_id": primary_person_id,
+                "people": people,
+                "objects": tuple(objects) if objects else snapshot.objects,
+                "health": _replace_health(
+                    snapshot.health, ComponentHealth(component="vision", status="ok")
+                ),
+            }
         )
-        await self._publish_snapshot(self.world.snapshot)
+        self.world.replace(current)
+        await self._publish_snapshot(current)
+
+        intent = self._policy.on_transition(snapshot, current)
+        if intent is None:
+            return None
+        timeline = self._compositor.compose(intent, self.simulator.pose)
+        await self.simulator.execute(timeline)
+        return timeline
 
     def set_bonuses(self, enabled: bool) -> bool:
         self.bonuses_enabled = enabled
@@ -559,7 +578,9 @@ class RuntimeCoordinator:
         )
 
 
-def _person_from_face(face: FaceResult) -> PersonState:
+def _person_from_face(
+    face: FaceResult, estimator: EngagementEstimator, mono_ns: int
+) -> tuple[PersonState, SocialState]:
     signals = face_result_to_signals(
         face_confidence=face.face_confidence,
         yaw_degrees=face.yaw_degrees,
@@ -568,11 +589,14 @@ def _person_from_face(face: FaceResult) -> PersonState:
         gaze_quality=face.gaze_quality,
         face_area_ratio=face.face_area_ratio,
     )
-    sample = EngagementEstimator(smoothing_ms=0).sample(signals, 0)
-    return PersonState(
-        person_id="person-1",
-        engagement_score=round(sample.raw_score, 2),
-        engagement_confidence=signals.confidence,
+    sample = estimator.sample(signals, mono_ns)
+    return (
+        PersonState(
+            person_id="person-1",
+            engagement_score=round(sample.smoothed_score, 2),
+            engagement_confidence=signals.confidence,
+        ),
+        sample.state,
     )
 
 

@@ -39,11 +39,26 @@
 }
 
 .viewport {
+  position: relative;
   min-height: 32rem;
   grid-row: span 3;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 1rem;
+}
+
+.lamp-action {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 2;
+  max-width: min(26rem, calc(100% - 2rem));
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.5rem;
+  background: rgba(16, 21, 34, 0.82);
+  color: #eef3ff;
+  font: 700 0.9rem/1.2 system-ui, sans-serif;
 }
 
 .panel {
@@ -82,6 +97,7 @@
 }
 
 .device-preview {
+  position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -98,6 +114,47 @@
 .device-preview video {
   display: block;
   object-fit: cover;
+}
+
+.vision-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.vision-overlay-empty {
+  display: grid;
+  place-items: start end;
+  padding: 0.5rem;
+  color: #f8b4b4;
+  font: 700 0.8rem/1.2 system-ui, sans-serif;
+}
+
+.vision-box {
+  position: absolute;
+  border: 2px solid #38bdf8;
+  box-shadow: 0 0 0 1px rgba(8, 47, 73, 0.8), 0 0 1rem rgba(56, 189, 248, 0.45);
+}
+
+.vision-target {
+  position: absolute;
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid #facc15;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 1rem rgba(250, 204, 21, 0.7);
+}
+
+.vision-label {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 0.35rem;
+  background: rgba(2, 6, 23, 0.74);
+  color: #f8fafc;
+  font: 800 0.78rem/1.1 system-ui, sans-serif;
 }
 
 .device-placeholder {

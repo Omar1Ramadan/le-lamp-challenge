@@ -60,6 +60,21 @@ def test_heuristic_face_processor_requires_skin_tone_center() -> None:
 def test_heuristic_face_processor_detects_person_like_center() -> None:
     processor = HeuristicFaceProcessor()
     image = np.full((96, 96, 3), 45, dtype=np.uint8)
-    image[20:76, 24:72] = (95, 120, 145)
+    image[18:78, 26:72] = (95, 120, 145)
 
-    assert len(processor.process(CapturedFrame(image, mono_ns=1), now_mono_ns=1)) == 1
+    faces = processor.process(CapturedFrame(image, mono_ns=1), now_mono_ns=1)
+
+    assert len(faces) == 1
+    assert faces[0].gaze_score > 0.75
+
+
+def test_heuristic_face_processor_lowers_attention_when_off_center() -> None:
+    processor = HeuristicFaceProcessor()
+    image = np.full((96, 96, 3), 45, dtype=np.uint8)
+    image[18:78, 6:52] = (95, 120, 145)
+
+    faces = processor.process(CapturedFrame(image, mono_ns=1), now_mono_ns=1)
+
+    assert len(faces) == 1
+    assert faces[0].gaze_score < 0.45
+    assert faces[0].yaw_degrees > 20.0

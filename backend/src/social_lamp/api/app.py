@@ -184,7 +184,7 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     async def vision_frame(request: Request, body: VisionFrameRequest) -> dict[str, object]:
         coordinator = _coordinator(request.app)
         frame = _decode_browser_frame(body.image_base64)
-        await coordinator.process_vision_frame(
+        timeline = await coordinator.process_vision_frame(
             frame,
             face_processor=_browser_face_processor(request.app),
             object_detector=_browser_object_detector(request.app),
@@ -197,6 +197,8 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
             "ok": True,
             "revision": coordinator.world.snapshot.revision,
             "world_snapshot": coordinator.world.snapshot.model_dump(mode="json"),
+            "behavior_timeline": timeline.model_dump(mode="json") if timeline is not None else None,
+            "vision_debug": getattr(_browser_face_processor(request.app), "last_debug", None),
         }
 
     @app.post("/api/neutralize")

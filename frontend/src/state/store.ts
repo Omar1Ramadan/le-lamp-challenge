@@ -21,9 +21,34 @@ export const initialLampStore: LampStoreSnapshot = {
   timeline: null,
 };
 
-export function poseFromTimeline(timeline: DashboardTimeline | null): LampPose {
+export function poseFromTimeline(timeline: DashboardTimeline | null, elapsedMs?: number): LampPose {
   const pose = neutralPose();
   if (timeline === null) {
+    return pose;
+  }
+  if (elapsedMs !== undefined) {
+    const boundedElapsed = Math.max(0, Math.min(elapsedMs, timeline.duration_ms));
+    for (const track of timeline.motion_tracks) {
+      const keyframes = [...track.keyframes].sort((a, b) => a.offset_ms - b.offset_ms);
+      if (keyframes.length === 0) {
+        continue;
+      }
+      const nextIndex = keyframes.findIndex((keyframe) => keyframe.offset_ms >= boundedElapsed);
+      if (nextIndex <= 0) {
+        pose[track.channel as MotionChannel] = keyframes[0].value;
+        continue;
+      }
+      if (nextIndex === -1) {
+        pose[track.channel as MotionChannel] = keyframes.at(-1)?.value ?? 0;
+        continue;
+      }
+      const previous = keyframes[nextIndex - 1];
+      const next = keyframes[nextIndex];
+      const span = Math.max(next.offset_ms - previous.offset_ms, 1);
+      const progress = (boundedElapsed - previous.offset_ms) / span;
+      pose[track.channel as MotionChannel] =
+        previous.value + (next.value - previous.value) * progress;
+    }
     return pose;
   }
   for (const track of timeline.motion_tracks) {

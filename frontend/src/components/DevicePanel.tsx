@@ -1,21 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 
 import { uploadVisionFrame } from "../lib/api";
+import type { BehaviorTimeline } from "../contracts/generated";
 import type { DashboardWorldSnapshot } from "../state/store";
 
 type DeviceStatus = "idle" | "starting" | "live" | "error";
 
+interface VisionDebug {
+  attention_proxy: number;
+  box: { height: number; width: number; x: number; y: number };
+  target: { x: number; y: number };
+}
+
 interface DevicePanelProps {
+  onBehaviorTimeline?: (timeline: BehaviorTimeline) => void;
   onWorldSnapshot?: (snapshot: DashboardWorldSnapshot) => void;
 }
 
-export function DevicePanel({ onWorldSnapshot }: DevicePanelProps) {
+export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot }: DevicePanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const uploadInFlightRef = useRef(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [status, setStatus] = useState<DeviceStatus>("idle");
   const [message, setMessage] = useState("Camera and microphone are off.");
   const [monitorAudio, setMonitorAudio] = useState(false);
+  const [visionDebug, setVisionDebug] = useState<VisionDebug | null>(null);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -73,6 +83,9 @@ export function DevicePanel({ onWorldSnapshot }: DevicePanelProps) {
   }
 
   async function sendVideoFrame() {
+    if (uploadInFlightRef.current) {
+      return;
+    }
     const video = videoRef.current;
     if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       return;
@@ -94,13 +107,26 @@ export function DevicePanel({ onWorldSnapshot }: DevicePanelProps) {
     if (!imageBase64) {
       return;
     }
+    uploadInFlightRef.current = true;
     try {
       const response = await uploadVisionFrame<DashboardWorldSnapshot>(imageBase64);
       if (response.world_snapshot) {
         onWorldSnapshot?.(response.world_snapshot);
+        const peopleCount = response.world_snapshot.people.length;
+        setMessage(
+          peopleCount > 0
+            ? `Backend vision updated: ${peopleCount} person${peopleCount === 1 ? "" : "s"} tracked.`
+            : "Backend vision updated: no person tracked.",
+        );
+      }
+      setVisionDebug(isVisionDebug(response.vision_debug) ? response.vision_debug : null);
+      if (response.behavior_timeline) {
+        onBehaviorTimeline?.(response.behavior_timeline as BehaviorTimeline);
       }
     } catch {
       setMessage("Browser devices are live, but backend vision frame upload failed.");
+    } finally {
+      uploadInFlightRef.current = false;
     }
   }
 
@@ -109,7 +135,10 @@ export function DevicePanel({ onWorldSnapshot }: DevicePanelProps) {
       <h2>Input devices</h2>
       <div className="device-preview">
         {stream ? (
-          <video ref={videoRef} autoPlay muted playsInline aria-label="Camera preview" />
+          <>
+            <video ref={videoRef} autoPlay muted playsInline aria-label="Camera preview" />
+            <VisionOverlay debug={visionDebug} />
+          </>
         ) : (
           <div className="device-placeholder">No camera preview</div>
         )}
@@ -137,6 +166,47 @@ export function DevicePanel({ onWorldSnapshot }: DevicePanelProps) {
         Monitor microphone audio
       </label>
     </section>
+  );
+}
+
+function VisionOverlay({ debug }: { debug: VisionDebug | null }) {
+  if (!debug) {
+    return <div className="vision-overlay vision-overlay-empty">No backend pose</div>;
+  }
+
+  const boxStyle = {
+    height: `${debug.box.height * 100}%`,
+    left: `${debug.box.x * 100}%`,
+    top: `${debug.box.y * 100}%`,
+    width: `${debug.box.width * 100}%`,
+  };
+  const targetStyle = {
+    left: `${debug.target.x * 100}%`,
+    top: `${debug.target.y * 100}%`,
+  };
+
+  return (
+    <div className="vision-overlay" aria-label="Backend vision pose overlay">
+      <div className="vision-box" style={boxStyle} />
+      <div className="vision-target" style={targetStyle} />
+      <span className="vision-label">attention {Math.round(debug.attention_proxy * 100)}%</span>
+    </div>
+  );
+}
+
+function isVisionDebug(value: unknown): value is VisionDebug {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<VisionDebug>;
+  return (
+    typeof candidate.attention_proxy === "number" &&
+    typeof candidate.box?.height === "number" &&
+    typeof candidate.box.width === "number" &&
+    typeof candidate.box.x === "number" &&
+    typeof candidate.box.y === "number" &&
+    typeof candidate.target?.x === "number" &&
+    typeof candidate.target.y === "number"
   );
 }
 

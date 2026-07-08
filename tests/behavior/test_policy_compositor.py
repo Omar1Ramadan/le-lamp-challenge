@@ -17,7 +17,26 @@ def test_engagement_produces_acknowledge_timeline() -> None:
     timeline = BehaviorCompositor().compose(intent, current_pose={})
     assert timeline.intent_id == intent.intent_id
     assert {track.channel for track in timeline.motion_tracks} == {
+        "base_yaw",
         "head_yaw",
         "head_pitch",
     }
-    assert timeline.duration_ms == 700
+    assert timeline.duration_ms == 900
+
+
+def test_candidate_attention_produces_orient_timeline() -> None:
+    session_id = UUID("018f0000-0000-7000-8000-000000000001")
+    previous = WorldSnapshot.empty(session_id=session_id, mono_ns=0)
+    current = previous.model_copy(
+        update={"revision": 1, "social_state": SocialState.CANDIDATE, "as_of_mono_ns": 1}
+    )
+    intent = BehaviorPolicy().on_transition(previous, current)
+    assert intent is not None
+    assert intent.kind == "orient"
+    timeline = BehaviorCompositor().compose(intent, current_pose={})
+    assert timeline.duration_ms == 800
+    assert {track.channel for track in timeline.motion_tracks} == {
+        "base_yaw",
+        "head_yaw",
+        "head_pitch",
+    }

@@ -118,7 +118,7 @@ def _encoded_person_like_jpeg() -> str:
     import cv2
 
     image = np.full((96, 96, 3), 45, dtype=np.uint8)
-    image[20:76, 24:72] = (95, 120, 145)
+    image[18:78, 26:72] = (95, 120, 145)
     image[35:42, 34:42] = (40, 40, 40)
     image[35:42, 54:62] = (40, 40, 40)
     image[58:62, 40:56] = (55, 55, 55)
