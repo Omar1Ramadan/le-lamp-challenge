@@ -12,16 +12,20 @@ export interface InspectorHealth {
 
 interface InspectorProps {
   state: string;
+  audioMode: string;
   evidence: InspectorEvidence[];
   health: InspectorHealth[];
 }
 
-export function Inspector({ state, evidence, health }: InspectorProps) {
+export function Inspector({ state, audioMode, evidence, health }: InspectorProps) {
   return (
     <aside className="panel inspector" aria-label="Evidence inspector">
       <h2>Inspector</h2>
       <p>
         Social state: <strong>{state}</strong>
+      </p>
+      <p>
+        Audio mode: <strong>{audioMode}</strong>
       </p>
       <section aria-label="Evidence">
         <h3>Evidence</h3>

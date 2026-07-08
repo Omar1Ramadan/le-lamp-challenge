@@ -41,6 +41,14 @@ export async function submitText(text: string): Promise<string> {
   return response.response?.text ?? response.response?.status ?? "No response.";
 }
 
+export async function startSession(): Promise<{ ok: boolean; running: boolean }> {
+  return fetchJson("/api/session/start", { method: "POST" });
+}
+
+export async function stopSession(): Promise<{ ok: boolean; running: boolean }> {
+  return fetchJson("/api/session/stop", { method: "POST" });
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${url}`, init);
   if (!response.ok) {

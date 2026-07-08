@@ -58,3 +58,42 @@ class MediaPipeFaceAdapter:
         if now_mono_ns - frame.mono_ns > MAX_FRAME_AGE_NS:
             return ()
         return tuple(self._landmarker.detect(frame.image))
+
+
+class OpenCvFaceProcessor:
+    def __init__(self) -> None:
+        try:
+            import cv2
+        except Exception as exc:
+            raise RuntimeError(f"face model unavailable: {exc.__class__.__name__}") from exc
+
+        cascade_root = str(getattr(cv2, "data").haarcascades)
+        cascade = cv2.CascadeClassifier(cascade_root + "haarcascade_frontalface_default.xml")
+        if cascade.empty():
+            raise RuntimeError("face model unavailable: cascade load failed")
+        self._cv2 = cv2
+        self._cascade = cascade
+
+    def process(self, frame: CapturedFrame, *, now_mono_ns: int) -> tuple[FaceResult, ...]:
+        if now_mono_ns - frame.mono_ns > MAX_FRAME_AGE_NS:
+            return ()
+
+        grayscale = self._cv2.cvtColor(frame.image, self._cv2.COLOR_BGR2GRAY)
+        detections = self._cascade.detectMultiScale(grayscale, scaleFactor=1.1, minNeighbors=5)
+        height, width = grayscale.shape
+        frame_area = max(width * height, 1)
+
+        results: list[FaceResult] = []
+        for x, y, w, h in detections:
+            del x, y
+            results.append(
+                FaceResult(
+                    face_confidence=0.75,
+                    yaw_degrees=0.0,
+                    pitch_degrees=0.0,
+                    gaze_score=0.5,
+                    gaze_quality=0.45,
+                    face_area_ratio=(w * h) / frame_area,
+                )
+            )
+        return tuple(results)

@@ -56,6 +56,7 @@ Important variables:
 
 - `CONVERSATION_PROVIDER=template` keeps recall deterministic and offline.
 - `ENABLE_CLOUD_CONVERSATION=true` plus `OPENAI_API_KEY` enables the optional cloud provider.
+- `ENABLE_LIVE_CAPTURE=true` turns on backend-host webcam and microphone workers.
 - `DATABASE_PATH` points at the local SQLite evidence memory.
 - `SNAPSHOT_PATH` points at private local snapshots if enabled.
 - `RETENTION_DAYS` controls cleanup policy for private runtime data.
@@ -146,6 +147,13 @@ The public demo does not require model downloads. For live perception work, inst
 
 ```bash
 uv run python -m social_lamp.capture.frames --probe
+```
+
+Then enable backend device capture before starting the API:
+
+```bash
+# .env
+ENABLE_LIVE_CAPTURE=true
 ```
 
 Object model downloads should be performed only by explicit setup commands for live experiments, not during automated tests.

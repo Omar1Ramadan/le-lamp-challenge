@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
+from time import monotonic_ns
 from typing import Protocol
 
 from uuid6 import uuid7
@@ -46,6 +48,26 @@ class MetricsPort(Protocol):
     def increment(self, name: str, **labels: str) -> None: ...
 
 
+class CameraSource(Protocol):
+    health_detail: str
+
+    def open(self) -> bool: ...
+
+    def read(self) -> CapturedFrame | None: ...
+
+    def close(self) -> None: ...
+
+
+class AudioSource(Protocol):
+    health_detail: str
+
+    def start(self) -> bool: ...
+
+    def read_chunk(self, *, timeout_s: float = 0.5) -> bytes | None: ...
+
+    def close(self) -> None: ...
+
+
 class WorldPort(Protocol):
     @property
     def snapshot(self) -> WorldSnapshot: ...
@@ -80,6 +102,13 @@ class RuntimeCoordinator:
         conversation: ConversationProvider | None = None,
         policy: BehaviorPolicy | None = None,
         compositor: BehaviorCompositor | None = None,
+        camera_source: CameraSource | None = None,
+        face_processor: object | None = None,
+        object_detector: object | None = None,
+        anchors: dict[str, BBox] | None = None,
+        audio_source: AudioSource | None = None,
+        audio_classifier: object | None = None,
+        snapshot_publisher: Callable[[dict[str, object]], Awaitable[None]] | None = None,
     ) -> None:
         self.world = world
         self.simulator = simulator
@@ -97,6 +126,13 @@ class RuntimeCoordinator:
         self.audio_state = AudioState(False, False, None)
         self.bonuses_enabled = False
         self.replay_messages: list[tuple[str, dict[str, object]]] = []
+        self._camera_source = camera_source
+        self._face_processor = face_processor
+        self._object_detector = object_detector
+        self._anchors = anchors or {}
+        self._audio_source = audio_source
+        self._audio_classifier = audio_classifier
+        self._snapshot_publisher = snapshot_publisher
 
     @classmethod
     def for_test(cls, *, database: Path) -> RuntimeCoordinator:
@@ -111,7 +147,17 @@ class RuntimeCoordinator:
     async def start(self) -> None:
         if self._resources_closed:
             raise RuntimeError("runtime resources are already closed")
+        if self._running:
+            return
         self._running = True
+        if (
+            self._camera_source is not None
+            and self._face_processor is not None
+            and self._object_detector is not None
+        ):
+            self._spawn(self._run_camera_loop())
+        if self._audio_source is not None and self._audio_classifier is not None:
+            self._spawn(self._run_audio_loop())
 
     async def stop(self) -> None:
         if self._resources_closed:
@@ -123,10 +169,83 @@ class RuntimeCoordinator:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
             self._tasks.clear()
+        if self._camera_source is not None:
+            await asyncio.to_thread(self._camera_source.close)
+        if self._audio_source is not None:
+            await asyncio.to_thread(self._audio_source.close)
         await self.simulator.neutralize()
         await self.conversation.close("runtime stopping")
         await self.memory.close()
         self._resources_closed = True
+
+    def _spawn(self, coroutine: Coroutine[object, object, None]) -> None:
+        task: asyncio.Task[None] = asyncio.create_task(coroutine)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _run_camera_loop(self) -> None:
+        source = self._camera_source
+        face_processor = self._face_processor
+        object_detector = self._object_detector
+        if source is None or face_processor is None or object_detector is None:
+            return
+        opened = await asyncio.to_thread(source.open)
+        if not opened:
+            await self._set_health("camera", "degraded", source.health_detail)
+            return
+        while self._running:
+            frame = await asyncio.to_thread(source.read)
+            if frame is None:
+                await self._set_health("camera", "degraded", source.health_detail)
+                await asyncio.sleep(0.1)
+                continue
+            await self._set_health("camera", "ok", None)
+            await self.process_vision_frame(
+                frame,
+                face_processor=face_processor,
+                object_detector=object_detector,
+                anchors=self._anchors,
+            )
+            await asyncio.sleep(0.05)
+
+    async def _run_audio_loop(self) -> None:
+        source = self._audio_source
+        classifier = self._audio_classifier
+        if source is None or classifier is None:
+            return
+        started = await asyncio.to_thread(source.start)
+        if not started:
+            await self._set_health("microphone", "degraded", source.health_detail)
+            return
+        while self._running:
+            chunk_bytes = await asyncio.to_thread(source.read_chunk, timeout_s=0.5)
+            if chunk_bytes is None:
+                continue
+            await self.process_audio_chunk(
+                MicrophoneChunk(pcm=chunk_bytes, mono_ns=monotonic_ns()),
+                classifier=classifier,
+            )
+
+    async def _set_health(self, component: str, status: str, detail: str | None) -> None:
+        snapshot = self.world.snapshot
+        updated = snapshot.model_copy(
+            update={
+                "snapshot_id": uuid7(),
+                "revision": snapshot.revision + 1,
+                "as_of_mono_ns": monotonic_ns(),
+                "health": _replace_health(
+                    snapshot.health,
+                    ComponentHealth(component=component, status=status, detail=detail),
+                ),
+            }
+        )
+        self.world.replace(updated)
+        await self._publish_snapshot(updated)
+
+    async def _publish_snapshot(self, snapshot: WorldSnapshot) -> None:
+        if self._snapshot_publisher is None:
+            return
+        await self._snapshot_publisher(snapshot.model_dump(mode="json"))
 
     async def replay(self, directory: Path) -> None:
         self.replay_messages.clear()
@@ -294,6 +413,7 @@ class RuntimeCoordinator:
                     }
                 )
             )
+            await self._publish_snapshot(self.world.snapshot)
             return
         self.audio_state = self._audio_analyzer.push(frame)
         people = snapshot.people
@@ -322,6 +442,7 @@ class RuntimeCoordinator:
                 }
             )
         )
+        await self._publish_snapshot(self.world.snapshot)
 
     async def process_vision_frame(
         self,
@@ -348,6 +469,7 @@ class RuntimeCoordinator:
                     }
                 )
             )
+            await self._publish_snapshot(self.world.snapshot)
             return
 
         people = (_person_from_face(faces[0]),) if faces else snapshot.people
@@ -394,6 +516,7 @@ class RuntimeCoordinator:
                 }
             )
         )
+        await self._publish_snapshot(self.world.snapshot)
 
     def set_bonuses(self, enabled: bool) -> bool:
         self.bonuses_enabled = enabled

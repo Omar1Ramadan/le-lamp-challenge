@@ -6,7 +6,16 @@ import { DemoRail } from "./components/DemoRail";
 import { EvidenceTimeline } from "./components/EvidenceTimeline";
 import { Inspector, type InspectorEvidence } from "./components/Inspector";
 import { PerceptionPanel } from "./components/PerceptionPanel";
-import { getHealth, getReplays, getWorld, runReplay, submitText, type ReplaySummary } from "./lib/api";
+import {
+  getHealth,
+  getReplays,
+  getWorld,
+  runReplay,
+  startSession,
+  stopSession,
+  submitText,
+  type ReplaySummary,
+} from "./lib/api";
 import { connectSocket } from "./lib/socket";
 import { LampScene } from "./scene/LampScene";
 import {
@@ -30,6 +39,7 @@ function App() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [showEvidence, setShowEvidence] = useState(false);
+  const [sessionRunning, setSessionRunning] = useState(true);
   const world = state.world;
   const pose = useMemo(() => poseFromTimeline(state.timeline), [state.timeline]);
   const evidence = useMemo(() => inspectorEvidence(state.evidence), [state.evidence]);
@@ -68,6 +78,11 @@ function App() {
     setAnswer(await submitText(question));
   }
 
+  async function handleSessionToggle() {
+    const response = sessionRunning ? await stopSession() : await startSession();
+    setSessionRunning(response.running);
+  }
+
   return (
     <main className="app-shell">
       <section className="status-banner" aria-live="polite">
@@ -87,12 +102,21 @@ function App() {
         <EvidenceTimeline evidence={state.evidence} />
         <Inspector
           state={world?.social_state ?? "idle"}
+          audioMode={world?.audio_mode ?? "silent"}
           evidence={evidence}
           health={world?.health ?? []}
         />
         <DemoRail metrics={state.metrics} needsResync={state.needsResync} />
         <section className="panel demo-proof" aria-label="Replay proof controls">
           <h2>Replay proof</h2>
+          <p>
+            Live camera and microphone run on the backend host. Enable
+            <code> ENABLE_LIVE_CAPTURE=true </code>
+            in <code>.env</code> before starting the API if you want hardware input.
+          </p>
+          <button type="button" onClick={() => void handleSessionToggle()}>
+            {sessionRunning ? "Stop live session" : "Start live session"}
+          </button>
           {replays.map((replay) => (
             <button type="button" key={replay.id} onClick={() => void loadReplay(replay)}>
               Load {replay.label.toLowerCase()} replay

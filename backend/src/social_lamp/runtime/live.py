@@ -7,10 +7,16 @@ from uuid6 import uuid7
 
 from social_lamp.adapters.simulator import SimulatorAdapter
 from social_lamp.api.hub import ConnectionHub
+from social_lamp.audio.stream import SimpleVadClassifier, SoundDeviceMicrophoneStream
+from social_lamp.capture.frames import OpenCVCameraSource
 from social_lamp.config import Settings
 from social_lamp.conversation.base import ConversationProvider
 from social_lamp.domain.clock import SystemClock
+from social_lamp.domain.contracts import ComponentHealth
 from social_lamp.memory.repository import MemoryRepository
+from social_lamp.perception.faces import OpenCvFaceProcessor
+from social_lamp.perception.location import BBox
+from social_lamp.perception.objects import Detection
 from social_lamp.runtime.coordinator import RuntimeCoordinator
 from social_lamp.runtime.providers import build_conversation_provider
 from social_lamp.world.model import WorldModel
@@ -27,6 +33,12 @@ class RuntimeMetrics:
         return self._counters[(name, tuple(sorted(labels.items())))]
 
 
+class NullObjectDetector:
+    def detect(self, image: object) -> tuple[Detection, ...]:
+        del image
+        return ()
+
+
 async def build_live_runtime(
     *,
     settings: Settings | None = None,
@@ -41,8 +53,54 @@ async def build_live_runtime(
     clock = SystemClock()
     world = WorldModel(session_id=uuid7(), clock=clock)
     memory = await MemoryRepository.open(resolved_settings.database_path)
-    simulator = SimulatorAdapter(hub or ConnectionHub())
+    resolved_hub = hub or ConnectionHub()
+    simulator = SimulatorAdapter(resolved_hub)
     metrics = RuntimeMetrics()
+    camera_source = None
+    face_processor = None
+    object_detector = None
+    audio_source = None
+    audio_classifier = None
+    anchors: dict[str, BBox] = {"desk": (0.25, 0.45, 0.75, 0.95)}
+
+    if resolved_settings.enable_live_capture:
+        camera_source = OpenCVCameraSource(camera_index=resolved_settings.camera_index)
+        object_detector = NullObjectDetector()
+        audio_source = SoundDeviceMicrophoneStream()
+        audio_classifier = SimpleVadClassifier()
+        try:
+            face_processor = OpenCvFaceProcessor()
+        except RuntimeError as exc:
+            world.replace(
+                world.snapshot.model_copy(
+                    update={
+                        "revision": world.snapshot.revision + 1,
+                        "health": (
+                            ComponentHealth(component="vision", status="degraded", detail=str(exc)),
+                        ),
+                    }
+                )
+            )
+    else:
+        world.replace(
+            world.snapshot.model_copy(
+                update={
+                    "revision": world.snapshot.revision + 1,
+                    "health": (
+                        ComponentHealth(
+                            component="camera",
+                            status="disabled",
+                            detail="set ENABLE_LIVE_CAPTURE=true to use local devices",
+                        ),
+                        ComponentHealth(
+                            component="microphone",
+                            status="disabled",
+                            detail="set ENABLE_LIVE_CAPTURE=true to use local devices",
+                        ),
+                    ),
+                }
+            )
+        )
 
     coordinator = RuntimeCoordinator(
         world=world,
@@ -50,6 +108,15 @@ async def build_live_runtime(
         metrics=metrics,
         memory=memory,
         conversation=conversation,
+        camera_source=camera_source,
+        face_processor=face_processor,
+        object_detector=object_detector,
+        anchors=anchors,
+        audio_source=audio_source,
+        audio_classifier=audio_classifier,
+        snapshot_publisher=lambda body: resolved_hub.broadcast(
+            {"type": "world_snapshot", "body": body}
+        ),
     )
     if conversation is None:
         coordinator.conversation = build_conversation_provider(

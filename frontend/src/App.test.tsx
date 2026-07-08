@@ -42,6 +42,7 @@ class MockSocket {
 const world = {
   revision: 1,
   social_state: "idle",
+  audio_mode: "silent",
   people: [],
   objects: [],
   health: [],
@@ -65,6 +66,12 @@ beforeEach(() => {
       }
       if (url.endsWith("/api/replay")) {
         return Response.json({ ok: true, revision: 2 });
+      }
+      if (url.endsWith("/api/session/start")) {
+        return Response.json({ ok: true, running: true });
+      }
+      if (url.endsWith("/api/session/stop")) {
+        return Response.json({ ok: true, running: false });
       }
       if (url.endsWith("/api/text")) {
         return Response.json({ ok: true, response: { text: "I found keys from stored evidence." } });
@@ -127,6 +134,7 @@ describe("App backend integration", () => {
     expect(screen.getByTestId("lamp-pose")).toHaveTextContent("0.5");
     expect(screen.getByRole("article", { name: /memory: keys/i })).toHaveTextContent("keys");
     expect(screen.getAllByText("observation-core-keys-2")[0]).toBeVisible();
+    expect(screen.getByText(/Audio mode:/i)).toBeVisible();
   });
 
   it("submits text questions to the backend", async () => {

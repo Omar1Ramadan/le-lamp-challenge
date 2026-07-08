@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     camera_index: int = Field(default=0, validation_alias="CAMERA_INDEX")
     retention_days: int = Field(default=30, validation_alias="RETENTION_DAYS")
     enable_audio_bonus: bool = Field(default=False, validation_alias="ENABLE_AUDIO_BONUS")
+    enable_live_capture: bool = Field(default=False, validation_alias="ENABLE_LIVE_CAPTURE")
     enable_cloud_conversation: bool = Field(
         default=False, validation_alias="ENABLE_CLOUD_CONVERSATION"
     )

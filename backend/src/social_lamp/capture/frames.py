@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 from collections import deque
 from dataclasses import dataclass
 from threading import Lock
+from time import monotonic_ns
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -70,3 +74,46 @@ def _probe_camera() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_probe_camera())
+
+
+class OpenCVCameraSource:
+    def __init__(self, *, camera_index: int = 0) -> None:
+        self._camera_index = camera_index
+        self._capture: Any | None = None
+        self.health_detail = "camera not started"
+
+    def open(self) -> bool:
+        try:
+            import cv2
+        except Exception as exc:
+            self.health_detail = f"camera unavailable: {exc.__class__.__name__}"
+            return False
+
+        capture = cv2.VideoCapture(self._camera_index)
+        if not capture.isOpened():
+            capture.release()
+            self.health_detail = "camera unavailable"
+            return False
+
+        self._capture = capture
+        self.health_detail = "camera available"
+        return True
+
+    def read(self) -> CapturedFrame | None:
+        capture = self._capture
+        if capture is None:
+            self.health_detail = "camera unavailable"
+            return None
+        ok, frame = capture.read()
+        if not ok or frame is None:
+            self.health_detail = "camera frame unavailable"
+            return None
+        self.health_detail = "camera available"
+        return CapturedFrame(np.asarray(frame, dtype=np.uint8), mono_ns=monotonic_ns())
+
+    def close(self) -> None:
+        capture = self._capture
+        self._capture = None
+        if capture is not None:
+            capture.release()
+        self.health_detail = "camera stopped"
