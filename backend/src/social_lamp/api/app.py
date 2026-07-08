@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
+import binascii
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from time import monotonic_ns
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -10,8 +13,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from social_lamp.api.hub import ConnectionHub
+from social_lamp.capture.frames import CapturedFrame
+from social_lamp.perception.faces import HeuristicFaceProcessor, OpenCvFaceProcessor
 from social_lamp.runtime.coordinator import RuntimeCoordinator
-from social_lamp.runtime.live import build_live_runtime
+from social_lamp.runtime.live import NullObjectDetector, build_live_runtime
 
 
 class ReplayRequest(BaseModel):
@@ -28,6 +33,10 @@ class ToggleRequest(BaseModel):
 
 class TraceExportRequest(BaseModel):
     directory: str
+
+
+class VisionFrameRequest(BaseModel):
+    image_base64: str
 
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "testclient", "localhost"}
@@ -171,6 +180,25 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
         )
         return {"ok": True, "response": response.__dict__}
 
+    @app.post("/api/vision/frame")
+    async def vision_frame(request: Request, body: VisionFrameRequest) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
+        frame = _decode_browser_frame(body.image_base64)
+        await coordinator.process_vision_frame(
+            frame,
+            face_processor=_browser_face_processor(request.app),
+            object_detector=_browser_object_detector(request.app),
+            anchors={"desk": (0.25, 0.45, 0.75, 0.95)},
+        )
+        degraded_detail = getattr(request.app.state, "browser_face_processor_degraded", None)
+        if isinstance(degraded_detail, str):
+            await coordinator._set_health("vision_model", "degraded", degraded_detail)
+        return {
+            "ok": True,
+            "revision": coordinator.world.snapshot.revision,
+            "world_snapshot": coordinator.world.snapshot.model_dump(mode="json"),
+        }
+
     @app.post("/api/neutralize")
     async def neutralize(request: Request) -> dict[str, object]:
         coordinator = _coordinator(request.app)
@@ -215,3 +243,43 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
 
 def _coordinator(app: FastAPI) -> RuntimeCoordinator:
     return cast(RuntimeCoordinator, app.state.coordinator)
+
+
+def _decode_browser_frame(image_base64: str) -> CapturedFrame:
+    try:
+        encoded = base64.b64decode(image_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="invalid image_base64") from exc
+
+    try:
+        import cv2
+        import numpy as np
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="vision decoder unavailable") from exc
+
+    data = np.frombuffer(encoded, dtype=np.uint8)
+    image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    if image is None:
+        raise HTTPException(status_code=400, detail="invalid image data")
+    return CapturedFrame(image=image, mono_ns=monotonic_ns())
+
+
+def _browser_face_processor(app: FastAPI) -> OpenCvFaceProcessor | HeuristicFaceProcessor:
+    processor = getattr(app.state, "browser_face_processor", None)
+    if processor is None:
+        try:
+            processor = OpenCvFaceProcessor()
+            app.state.browser_face_processor_degraded = None
+        except RuntimeError as exc:
+            processor = HeuristicFaceProcessor()
+            app.state.browser_face_processor_degraded = str(exc)
+        app.state.browser_face_processor = processor
+    return cast(OpenCvFaceProcessor | HeuristicFaceProcessor, processor)
+
+
+def _browser_object_detector(app: FastAPI) -> NullObjectDetector:
+    detector = getattr(app.state, "browser_object_detector", None)
+    if detector is None:
+        detector = NullObjectDetector()
+        app.state.browser_object_detector = detector
+    return cast(NullObjectDetector, detector)

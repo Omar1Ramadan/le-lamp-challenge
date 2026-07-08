@@ -472,7 +472,7 @@ class RuntimeCoordinator:
             await self._publish_snapshot(self.world.snapshot)
             return
 
-        people = (_person_from_face(faces[0]),) if faces else snapshot.people
+        people = (_person_from_face(faces[0]),) if faces else ()
         objects: list[ObjectState] = []
         for detection in detections:
             track_id = f"track-{detection.label.strip().lower().replace(' ', '-')}"

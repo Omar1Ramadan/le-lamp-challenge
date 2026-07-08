@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 import numpy as np
@@ -67,8 +68,10 @@ class OpenCvFaceProcessor:
         except Exception as exc:
             raise RuntimeError(f"face model unavailable: {exc.__class__.__name__}") from exc
 
-        cascade_root = str(getattr(cv2, "data").haarcascades)
-        cascade = cv2.CascadeClassifier(cascade_root + "haarcascade_frontalface_default.xml")
+        cascade_path = Path(str(cv2.data.haarcascades)) / "haarcascade_frontalface_default.xml"
+        if not cascade_path.exists():
+            raise RuntimeError(f"face model unavailable: missing cascade {cascade_path}")
+        cascade = cv2.CascadeClassifier(str(cascade_path))
         if cascade.empty():
             raise RuntimeError("face model unavailable: cascade load failed")
         self._cv2 = cv2
@@ -97,3 +100,41 @@ class OpenCvFaceProcessor:
                 )
             )
         return tuple(results)
+
+
+class HeuristicFaceProcessor:
+    detail = "face model unavailable; using browser-frame heuristic"
+
+    def process(self, frame: CapturedFrame, *, now_mono_ns: int) -> tuple[FaceResult, ...]:
+        if now_mono_ns - frame.mono_ns > MAX_FRAME_AGE_NS:
+            return ()
+
+        image = frame.image
+        if image.size == 0:
+            return ()
+
+        height, width = image.shape[:2]
+        if height < 24 or width < 24:
+            return ()
+
+        center = image[height // 5 : height * 4 // 5, width // 5 : width * 4 // 5]
+        if center.size == 0 or float(np.std(center)) < 8.0 or float(np.mean(center)) < 20.0:
+            return ()
+
+        b = center[:, :, 0].astype(np.int16)
+        g = center[:, :, 1].astype(np.int16)
+        r = center[:, :, 2].astype(np.int16)
+        skin = (r > 75) & (g > 45) & (b > 25) & (r > g) & (r > b) & ((r - b) > 20)
+        if float(np.count_nonzero(skin)) / float(skin.size) < 0.08:
+            return ()
+
+        return (
+            FaceResult(
+                face_confidence=0.55,
+                yaw_degrees=0.0,
+                pitch_degrees=0.0,
+                gaze_score=0.5,
+                gaze_quality=0.45,
+                face_area_ratio=0.12,
+            ),
+        )
