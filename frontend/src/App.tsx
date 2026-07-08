@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 
 import "./App.css";
 import { DemoRail } from "./components/DemoRail";
+import { DevicePanel } from "./components/DevicePanel";
 import { EvidenceTimeline } from "./components/EvidenceTimeline";
 import { Inspector, type InspectorEvidence } from "./components/Inspector";
 import { PerceptionPanel } from "./components/PerceptionPanel";
@@ -100,6 +101,11 @@ function App() {
         </section>
         <PerceptionPanel people={world?.people ?? []} objects={world?.objects ?? []} />
         <EvidenceTimeline evidence={state.evidence} />
+        <DevicePanel
+          onWorldSnapshot={(snapshot) =>
+            dispatch({ seq: state.lastSequence + 1, type: "world_snapshot", body: snapshot })
+          }
+        />
         <Inspector
           state={world?.social_state ?? "idle"}
           audioMode={world?.audio_mode ?? "silent"}

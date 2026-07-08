@@ -99,6 +99,39 @@ async def test_live_frame_degrades_health_when_model_fails(tmp_path: Path) -> No
     )
 
 
+@pytest.mark.asyncio
+async def test_live_frame_clears_people_when_face_leaves_frame(tmp_path: Path) -> None:
+    coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
+    try:
+        face = FaceResult(
+            face_confidence=0.9,
+            yaw_degrees=0.0,
+            pitch_degrees=0.0,
+            gaze_score=0.8,
+            gaze_quality=0.9,
+            face_area_ratio=0.12,
+        )
+        frame = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10)
+        await coordinator.process_vision_frame(
+            frame,
+            face_processor=FakeFaceProcessor((face,)),
+            object_detector=FakeObjectDetector(),
+            anchors={},
+        )
+        assert len(coordinator.world.snapshot.people) == 1
+
+        await coordinator.process_vision_frame(
+            CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=11),
+            face_processor=FakeFaceProcessor(),
+            object_detector=FakeObjectDetector(),
+            anchors={},
+        )
+
+        assert coordinator.world.snapshot.people == ()
+    finally:
+        await coordinator.stop()
+
+
 def test_latest_frame_buffer_reports_stale_frames() -> None:
     buffer = LatestFrameBuffer(capacity=1, max_age_ns=5)
     buffer.put(np.zeros((2, 2, 3), dtype=np.uint8), mono_ns=10)

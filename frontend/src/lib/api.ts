@@ -49,6 +49,16 @@ export async function stopSession(): Promise<{ ok: boolean; running: boolean }> 
   return fetchJson("/api/session/stop", { method: "POST" });
 }
 
+export async function uploadVisionFrame<T>(
+  imageBase64: string,
+): Promise<{ ok: boolean; world_snapshot?: T }> {
+  return fetchJson("/api/vision/frame", {
+    body: JSON.stringify({ image_base64: imageBase64 }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${url}`, init);
   if (!response.ok) {

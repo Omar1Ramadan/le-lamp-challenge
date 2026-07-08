@@ -51,6 +51,14 @@ const world = {
 beforeEach(() => {
   MockSocket.instances = [];
   vi.stubGlobal("WebSocket", MockSocket);
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: vi.fn(async () => ({
+        getTracks: () => [{ stop: vi.fn() }],
+      })),
+    },
+  });
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
@@ -102,7 +110,18 @@ describe("App backend integration", () => {
     MockSocket.instances[0].emit({
       seq: 1,
       type: "world_snapshot",
-      body: { ...world, revision: 2, social_state: "engaged" },
+      body: {
+        ...world,
+        revision: 2,
+        social_state: "engaged",
+        people: [
+          {
+            person_id: "person-1",
+            engagement_score: 0.76,
+            engagement_confidence: 0.9,
+          },
+        ],
+      },
     });
     MockSocket.instances[0].emit({
       seq: 2,
@@ -131,10 +150,12 @@ describe("App backend integration", () => {
     });
 
     await waitFor(() => expect(screen.getByTestId("demo-step-engagement")).toHaveAttribute("data-complete", "true"));
+    expect(screen.getByText(/person-1 .* engagement 76% .* confidence 90%/i)).toBeVisible();
     expect(screen.getByTestId("lamp-pose")).toHaveTextContent("0.5");
     expect(screen.getByRole("article", { name: /memory: keys/i })).toHaveTextContent("keys");
     expect(screen.getAllByText("observation-core-keys-2")[0]).toBeVisible();
     expect(screen.getByText(/Audio mode:/i)).toBeVisible();
+    expect(screen.getByRole("region", { name: "Camera and microphone tools" })).toBeVisible();
   });
 
   it("submits text questions to the backend", async () => {
@@ -146,5 +167,18 @@ describe("App backend integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
 
     await screen.findByText("I found keys from stored evidence.");
+  });
+
+  it("starts browser camera and microphone tools", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start camera and mic" }));
+
+    await screen.findByText("Browser camera and microphone are live.");
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: true,
+      video: true,
+    });
+    expect(screen.getByLabelText("Monitor microphone audio")).toBeEnabled();
   });
 });

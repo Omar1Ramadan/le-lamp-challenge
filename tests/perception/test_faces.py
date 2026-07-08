@@ -1,6 +1,10 @@
 import numpy as np
 from social_lamp.capture.frames import CapturedFrame
-from social_lamp.perception.faces import MediaPipeFaceAdapter, face_result_to_signals
+from social_lamp.perception.faces import (
+    HeuristicFaceProcessor,
+    MediaPipeFaceAdapter,
+    face_result_to_signals,
+)
 
 
 def test_low_quality_eyes_disable_gaze_signal() -> None:
@@ -44,3 +48,18 @@ def test_mediapipe_adapter_skips_stale_frames_without_calling_landmarker() -> No
     frame = CapturedFrame(np.zeros((2, 2, 3), dtype=np.uint8), mono_ns=1)
     assert adapter.process(frame, now_mono_ns=400_000_001) == ()
     assert not landmarker.called
+
+
+def test_heuristic_face_processor_requires_skin_tone_center() -> None:
+    processor = HeuristicFaceProcessor()
+    empty_room = np.full((96, 96, 3), (40, 80, 40), dtype=np.uint8)
+
+    assert processor.process(CapturedFrame(empty_room, mono_ns=1), now_mono_ns=1) == ()
+
+
+def test_heuristic_face_processor_detects_person_like_center() -> None:
+    processor = HeuristicFaceProcessor()
+    image = np.full((96, 96, 3), 45, dtype=np.uint8)
+    image[20:76, 24:72] = (95, 120, 145)
+
+    assert len(processor.process(CapturedFrame(image, mono_ns=1), now_mono_ns=1)) == 1
