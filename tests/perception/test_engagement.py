@@ -34,6 +34,21 @@ def test_engagement_requires_entry_dwell_and_exit_hysteresis() -> None:
 maybe_signal = st.one_of(st.none(), st.floats(min_value=0.0, max_value=1.0))
 
 
+def test_heuristic_confidence_does_not_transition_to_engaged() -> None:
+    estimator = EngagementEstimator(smoothing_ms=0)
+    heuristic = EngagementSignals(
+        face_presence=0.45,
+        head_toward=None,
+        gaze_toward=None,
+        proximity=0.4,
+        directed_speech=0.0,
+        confidence=0.35,
+    )
+    for mono_ns in range(0, 2_000_000_000, 100_000_000):
+        sample = estimator.sample(heuristic, mono_ns)
+        assert sample.state is not SocialState.ENGAGED
+
+
 @given(
     face_presence=maybe_signal,
     head_toward=maybe_signal,

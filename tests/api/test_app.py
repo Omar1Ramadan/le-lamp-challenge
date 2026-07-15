@@ -4,6 +4,7 @@ import numpy as np
 from fastapi.testclient import TestClient
 from social_lamp.api.app import create_app
 from social_lamp.capture.frames import CapturedFrame
+from social_lamp.domain.contracts import ComponentHealth
 from social_lamp.perception.faces import FaceResult
 
 
@@ -18,14 +19,22 @@ class FakeFaceProcessor:
                 gaze_score=0.8,
                 gaze_quality=0.9,
                 face_area_ratio=0.12,
+                pose_source="mediapipe_matrix",
+                pose_quality=0.95,
             ),
         )
 
 
 class FakeObjectDetector:
+    def __init__(self, health_status: str = "active") -> None:
+        self._health_status = health_status
+
     def detect(self, image: np.ndarray) -> tuple[()]:
         del image
         return ()
+
+    def health(self) -> ComponentHealth:
+        return ComponentHealth(component="object_detector", status=self._health_status)
 
 
 def test_health_and_initial_snapshot_are_available() -> None:
@@ -85,7 +94,7 @@ def test_browser_vision_frame_rejects_invalid_image() -> None:
 def test_browser_vision_frame_with_disabled_detector_reports_disabled_health() -> None:
     with TestClient(create_app()) as client:
         client.app.state.browser_face_processor = FakeFaceProcessor()
-        client.app.state.browser_object_detector = FakeObjectDetector()
+        client.app.state.browser_object_detector = FakeObjectDetector(health_status="disabled")
 
         response = client.post(
             "/api/vision/frame",
@@ -129,8 +138,11 @@ def test_browser_vision_frame_includes_vision_status() -> None:
         assert response.status_code == 200
         data = response.json()
         assert "vision_status" in data
-        assert data["vision_status"]["face_detector"]["name"] == "test_detector"
-        assert data["vision_status"]["face_detector"]["status"] == "active"
+        vs = data["vision_status"]
+        assert vs["face_detector"]["name"] == "test_detector"
+        assert vs["face_detector"]["status"] == "active"
+        assert vs["object_detector"]["name"] == "object_detector"
+        assert vs["object_detector"]["status"] == "active"
 
 
 def _encoded_test_jpeg() -> str:

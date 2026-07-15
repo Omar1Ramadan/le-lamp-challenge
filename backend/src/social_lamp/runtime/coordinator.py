@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from collections.abc import Awaitable, Callable, Coroutine
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic_ns
 from typing import Protocol
@@ -33,9 +35,25 @@ from social_lamp.perception.faces import FaceResult, face_result_to_signals
 from social_lamp.perception.location import BBox, locate_box
 from social_lamp.perception.objects import Detection, ObjectTrack
 from social_lamp.replay.trace import TraceManifest, TraceReader, TraceRecord, write_trace
+from social_lamp.world.commands import AudioUpdate, HealthUpdate, Source, VisionUpdate
 
 FACE_MISSING_GRACE_MS = 600
 FACE_TRACK_EXPIRE_MS = 1500
+LOCATION_STABLE_NS = 1_000_000_000
+OBJECT_REFRESH_NS = 30_000_000_000
+
+
+@dataclass
+class ObjectMemoryState:
+    last_recorded_label: str | None = None
+    last_recorded_region: str | None = None
+    last_recorded_depth: str | None = None
+    last_recorded_anchor: str | None = None
+    last_recorded_mono_ns: int | None = None
+    pending_region: str | None = None
+    pending_depth: str | None = None
+    pending_anchor: str | None = None
+    pending_since_mono_ns: int | None = None
 
 
 class SimulatorPort(Protocol):
@@ -76,6 +94,14 @@ class WorldPort(Protocol):
     def snapshot(self) -> WorldSnapshot: ...
 
     def replace(self, snapshot: WorldSnapshot) -> None: ...
+
+    def apply_health(self, update: HealthUpdate) -> WorldSnapshot | None: ...
+
+    def apply_vision(self, update: VisionUpdate) -> WorldSnapshot | None: ...
+
+    def apply_audio(self, update: AudioUpdate) -> WorldSnapshot | None: ...
+
+    def replace_from_replay(self, snapshot: WorldSnapshot) -> WorldSnapshot: ...
 
 
 class MemoryPort(Protocol):
@@ -124,7 +150,7 @@ class RuntimeCoordinator:
         self._tasks: set[asyncio.Task[None]] = set()
         self._resources_closed = False
         self._object_tracks: dict[str, ObjectTrack] = {}
-        self._recorded_stable_tracks: set[str] = set()
+        self._object_memory_state: dict[str, ObjectMemoryState] = {}
         self._audio_analyzer = AudioAnalyzer()
         self._engagement_estimator = EngagementEstimator()
         self.audio_state = AudioState(False, False, None)
@@ -234,21 +260,16 @@ class RuntimeCoordinator:
                 classifier=classifier,
             )
 
-    async def _set_health(self, component: str, status: str, detail: str | None) -> None:
-        snapshot = self.world.snapshot
-        updated = snapshot.model_copy(
-            update={
-                "snapshot_id": uuid7(),
-                "revision": snapshot.revision + 1,
-                "as_of_mono_ns": monotonic_ns(),
-                "health": _replace_health(
-                    snapshot.health,
-                    ComponentHealth(component=component, status=status, detail=detail),
-                ),
-            }
+    async def _set_health(self, component: str, status: str, detail: str | None, *, mono_ns: int | None = None) -> None:
+        update = HealthUpdate(
+            component=component,
+            status=status,
+            detail=detail,
+            as_of_mono_ns=mono_ns or monotonic_ns(),
         )
-        self.world.replace(updated)
-        await self._publish_snapshot(updated)
+        current = self.world.apply_health(update)
+        if current is not None:
+            await self._publish_snapshot(current)
 
     async def _publish_snapshot(self, snapshot: WorldSnapshot) -> None:
         if self._snapshot_publisher is None:
@@ -276,7 +297,7 @@ class RuntimeCoordinator:
                         "social_state": SocialState(state_value),
                     }
                 )
-                self.world.replace(current)
+                self.world.replace_from_replay(current)
                 self.replay_messages.append(("world_snapshot", current.model_dump(mode="json")))
             elif record.record_type == "observation":
                 current = previous
@@ -337,7 +358,7 @@ class RuntimeCoordinator:
                     current = current.model_copy(
                         update={"health": _replace_health(current.health, health)}
                     )
-                    self.world.replace(current)
+                    self.world.replace_from_replay(current)
             self.metrics.increment("social_transition", state=current.social_state.value)
             self.replay_messages.append(
                 (
@@ -403,54 +424,21 @@ class RuntimeCoordinator:
         self._audio_analyzer.set_simulator_speaking(speaking)
 
     async def process_audio_chunk(self, chunk: MicrophoneChunk, *, classifier: object) -> None:
-        snapshot = self.world.snapshot
         try:
             frame = classifier.classify(chunk.pcm, chunk.sample_rate)  # type: ignore[attr-defined]
         except Exception as exc:
-            self.world.replace(
-                snapshot.model_copy(
-                    update={
-                        "revision": snapshot.revision + 1,
-                        "as_of_mono_ns": chunk.mono_ns,
-                        "health": _replace_health(
-                            snapshot.health,
-                            ComponentHealth(
-                                component="microphone", status="degraded", detail=str(exc)
-                            ),
-                        ),
-                    }
-                )
-            )
-            await self._publish_snapshot(self.world.snapshot)
+            await self._set_health("microphone", "degraded", str(exc), mono_ns=chunk.mono_ns)
             return
         self.audio_state = self._audio_analyzer.push(frame)
-        people = snapshot.people
-        if self.audio_state.speaker_id is not None:
-            people = (
-                PersonState(
-                    person_id=self.audio_state.speaker_id,
-                    engagement_score=0.0,
-                    engagement_confidence=0.0,
-                    is_active_speaker=True,
-                ),
-            )
-        self.world.replace(
-            snapshot.model_copy(
-                update={
-                    "snapshot_id": uuid7(),
-                    "revision": snapshot.revision + 1,
-                    "as_of_mono_ns": chunk.mono_ns,
-                    "audio_mode": AudioMode.LISTENING
-                    if self.audio_state.speech_active
-                    else AudioMode.SILENT,
-                    "people": people,
-                    "health": _replace_health(
-                        snapshot.health, ComponentHealth(component="microphone", status="ok")
-                    ),
-                }
-            )
+        update = AudioUpdate(
+            audio_mode=AudioMode.LISTENING if self.audio_state.speech_active else AudioMode.SILENT,
+            as_of_mono_ns=chunk.mono_ns,
+            active_speaker_id=self.audio_state.speaker_id,
+            health_update=ComponentHealth(component="microphone", status="ok"),
         )
-        await self._publish_snapshot(self.world.snapshot)
+        current = self.world.apply_audio(update)
+        if current is not None:
+            await self._publish_snapshot(current)
 
     async def process_vision_frame(
         self,
@@ -460,24 +448,12 @@ class RuntimeCoordinator:
         object_detector: object,
         anchors: dict[str, BBox],
     ) -> BehaviorTimeline | None:
-        snapshot = self.world.snapshot
+        previous = self.world.snapshot
         try:
             faces = tuple(face_processor.process(frame, now_mono_ns=frame.mono_ns))  # type: ignore[attr-defined]
             detections = tuple(object_detector.detect(frame.image))  # type: ignore[attr-defined]
         except Exception as exc:
-            self.world.replace(
-                snapshot.model_copy(
-                    update={
-                        "revision": snapshot.revision + 1,
-                        "as_of_mono_ns": frame.mono_ns,
-                        "health": _replace_health(
-                            snapshot.health,
-                            ComponentHealth(component="vision", status="degraded", detail=str(exc)),
-                        ),
-                    }
-                )
-            )
-            await self._publish_snapshot(self.world.snapshot)
+            await self._set_health("vision", "degraded", str(exc), mono_ns=frame.mono_ns)
             return None
 
         if faces:
@@ -523,7 +499,7 @@ class RuntimeCoordinator:
                 primary_person_id = "person-1"
             else:
                 people = ()
-                social_state = SocialState.DISENGAGED if snapshot.people else SocialState.IDLE
+                social_state = SocialState.DISENGAGED if previous.people else SocialState.IDLE
                 primary_person_id = None
                 self._last_person = None
                 self._last_person_seen_mono_ns = None
@@ -546,17 +522,57 @@ class RuntimeCoordinator:
                 anchor_name=location.anchor_name,
             )
             objects.append(state)
-            should_record = track.track_id not in self._recorded_stable_tracks
-            if should_record:
+
+            mem = self._object_memory_state.setdefault(track_id, ObjectMemoryState())
+            decision, reason = should_record_object_observation(
+                mem,
+                state.label,
+                state.horizontal_region,
+                state.depth_band,
+                state.anchor_name,
+                frame.mono_ns,
+            )
+            if decision:
                 await self.memory.record(
                     _observation_write(
                         state=state,
                         detection=detection,
-                        snapshot=snapshot,
+                        snapshot=previous,
                         captured_at_mono_ns=frame.mono_ns,
                     )
                 )
-                self._recorded_stable_tracks.add(track.track_id)
+                mem.last_recorded_label = state.label
+                mem.last_recorded_region = state.horizontal_region
+                mem.last_recorded_depth = state.depth_band
+                mem.last_recorded_anchor = state.anchor_name
+                mem.last_recorded_mono_ns = frame.mono_ns
+                mem.pending_region = None
+                mem.pending_depth = None
+                mem.pending_anchor = None
+                mem.pending_since_mono_ns = None
+            else:
+                loc = (state.horizontal_region, state.depth_band, state.anchor_name)
+                last_loc = (
+                    mem.last_recorded_region,
+                    mem.last_recorded_depth,
+                    mem.last_recorded_anchor,
+                )
+                if loc != last_loc:
+                    pending_loc = (
+                        mem.pending_region,
+                        mem.pending_depth,
+                        mem.pending_anchor,
+                    )
+                    if pending_loc != loc:
+                        mem.pending_region = state.horizontal_region
+                        mem.pending_depth = state.depth_band
+                        mem.pending_anchor = state.anchor_name
+                        mem.pending_since_mono_ns = frame.mono_ns
+                else:
+                    mem.pending_region = None
+                    mem.pending_depth = None
+                    mem.pending_anchor = None
+                    mem.pending_since_mono_ns = None
 
         detector_health = (
             object_detector.health()
@@ -574,31 +590,25 @@ class RuntimeCoordinator:
             face_health = ComponentHealth(
                 component="face_detector", status="unknown", detail="no metadata available"
             )
-        current = snapshot.model_copy(
-            update={
-                "snapshot_id": uuid7(),
-                "revision": snapshot.revision + 1,
-                "as_of_mono_ns": frame.mono_ns,
-                "social_state": social_state,
-                "primary_person_id": primary_person_id,
-                "people": people,
-                "objects": tuple(objects) if objects else snapshot.objects,
-                "health": _replace_health(
-                    _replace_health(
-                        _replace_health(
-                            snapshot.health,
-                            ComponentHealth(component="vision", status="ok"),
-                        ),
-                        face_health,
-                    ),
-                    detector_health,
-                ),
-            }
+        update = VisionUpdate(
+            people=people,
+            social_state=social_state,
+            primary_person_id=primary_person_id,
+            as_of_mono_ns=frame.mono_ns,
+            source=Source.CAMERA,
+            objects=tuple(objects) if objects else None,
+            health_updates=(
+                ComponentHealth(component="vision", status="ok"),
+                face_health,
+                detector_health,
+            ),
         )
-        self.world.replace(current)
+        current = self.world.apply_vision(update)
+        if current is None:
+            return None
         await self._publish_snapshot(current)
 
-        intent = self._policy.on_transition(snapshot, current)
+        intent = self._policy.on_transition(previous, current)
         if intent is None:
             return None
         timeline = self._compositor.compose(intent, self.simulator.pose)
@@ -656,6 +666,8 @@ def _person_from_face(
         gaze_score=face.gaze_score,
         gaze_quality=face.gaze_quality,
         face_area_ratio=face.face_area_ratio,
+        pose_source=face.pose_source,
+        pose_quality=face.pose_quality,
     )
     sample = estimator.sample(signals, mono_ns)
     return (
@@ -674,6 +686,37 @@ def _replace_health(
     return tuple(existing for existing in current if existing.component != item.component) + (item,)
 
 
+def should_record_object_observation(
+    mem: ObjectMemoryState,
+    current_label: str,
+    current_region: str | None,
+    current_depth: str | None,
+    current_anchor: str | None,
+    mono_ns: int,
+) -> tuple[bool, str]:
+    if mem.last_recorded_mono_ns is None:
+        return True, "first_stable"
+    if current_label != mem.last_recorded_label:
+        return True, "label_changed"
+
+    loc = (current_region, current_depth, current_anchor)
+    last_loc = (mem.last_recorded_region, mem.last_recorded_depth, mem.last_recorded_anchor)
+    if loc != last_loc:
+        pending_loc = (mem.pending_region, mem.pending_depth, mem.pending_anchor)
+        if (
+            pending_loc == loc
+            and mem.pending_since_mono_ns is not None
+            and mono_ns - mem.pending_since_mono_ns >= LOCATION_STABLE_NS
+        ):
+            return True, "location_changed"
+        return False, "location_pending"
+
+    if mono_ns - mem.last_recorded_mono_ns >= OBJECT_REFRESH_NS:
+        return True, "refresh"
+
+    return False, "unchanged"
+
+
 def _observation_write(
     *, state: ObjectState, detection: Detection, snapshot: WorldSnapshot, captured_at_mono_ns: int
 ) -> ObservationWrite:
@@ -681,7 +724,7 @@ def _observation_write(
         observation_id=f"vision-{state.track_id}-{captured_at_mono_ns}",
         track_id=state.track_id,
         session_id=str(snapshot.session_id),
-        observed_at_utc="2026-07-04T12:00:00Z",
+        observed_at_utc=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         observed_at_mono_ns=captured_at_mono_ns,
         label=state.label,
         label_source="vision",

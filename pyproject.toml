@@ -40,7 +40,7 @@ package = true
 packages = ["backend/src/social_lamp"]
 
 [tool.pytest.ini_options]
-pythonpath = ["backend/src"]
+pythonpath = ["backend/src", "tests"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 

@@ -195,16 +195,28 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
         degraded_detail = getattr(request.app.state, "browser_face_processor_degraded", None)
         if isinstance(degraded_detail, str):
             await coordinator._set_health("vision_model", "degraded", degraded_detail)
-        vision_status = None
         browser_metadata = getattr(request.app.state, "browser_face_processor_metadata", None)
-        if browser_metadata is not None:
-            vision_status = {
-                "face_detector": {
+        browser_object_detector = _browser_object_detector(request.app)
+        object_health = (
+            browser_object_detector.health()
+            if hasattr(browser_object_detector, "health")
+            else None
+        )
+        vision_status: dict[str, object] | None = None
+        if browser_metadata is not None or object_health is not None:
+            vision_status = {}
+            if browser_metadata is not None:
+                vision_status["face_detector"] = {
                     "name": browser_metadata.name,
                     "status": browser_metadata.status,
                     "detail": browser_metadata.detail,
                 }
-            }
+            if object_health is not None:
+                vision_status["object_detector"] = {
+                    "name": object_health.component,
+                    "status": object_health.status,
+                    "detail": object_health.detail,
+                }
         return {
             "ok": True,
             "revision": coordinator.world.snapshot.revision,

@@ -18,7 +18,7 @@ Set the following environment variables:
 
 ## Behavior
 
-- If the model loads successfully, the UI shows "N objects tracked" when objects are detected, and "0 objects tracked" when active but nothing found.
+- If the model loads successfully, the UI shows "N objects tracked" when objects are detected, and "0 objects detected" when active but nothing found.
 - If the model fails to load, the UI shows "Object detector degraded" with the error detail. The app continues running.
 - Object tracks must be stable (5 detections within 1 second, confidence >= 0.55, label agreement >= 75%) before appearing in world state.
 - Memory records are written once per stable track (first stabilization only).

@@ -5,14 +5,21 @@
 - Location is scene-relative and monocular. Depth bands are heuristics from bounding-box size, not metric 3D distance.
 - Object memory is strongest for curated demo objects and labels. Similar objects can produce ambiguity and should be reported as uncertainty.
 - Live engagement quality depends on lighting, camera placement, occlusion, glasses, and model availability.
-- Face detection falls back through MediaPipe → OpenCV Haar cascade → heuristic skin-color region detection. Each fallback reduces accuracy.
+- Face detection falls back through MediaPipe → OpenCV Haar cascade → heuristic skin-region detection. Each fallback reduces accuracy.
   - MediaPipe (face_landmarker.task model) gives the best gaze and head-pose estimates.
   - OpenCV Haar cascade is a fast CPU detector but lacks blendshape gaze tracking.
-  - Heuristic skin-region fallback is a coarse pixel-based detector with no real face geometry.
+  - **Heuristic skin-region fallback is a last-resort safety net, not a reliable detector.** It uses combined BGR + approximate YCrCb skin-color thresholding and morphological cleanup, but has no real face geometry, no landmark tracking, and no gaze estimation.
+  - Heuristic fallback always reports `status=degraded`. It cannot trigger high-confidence engagement transitions on its own.
+  - Heuristic gaze quality is set below the usable threshold, so gaze signals are always `None` when using the fallback.
+  - Heuristic confidence is capped at 0.45 and engagement confidence at 0.35, preventing accidental ENGAGED state transitions.
+  - False-positive rejection includes: aspect-ratio validation (0.35–1.6), area bounds (1.5%–30% of frame), position checks (upper/middle frame), box-density threshold (>20%), and largest-connected-component isolation.
   - Use `FACE_DETECTOR_MODE=mediapipe` to force MediaPipe and get a clear degradation report if it fails.
   - Use `FACE_DETECTOR_MODE=opencv` or `heuristic` to test lower-quality paths.
   - Common MediaPipe failures: missing `face_landmarker.task` model file, unsupported Python/platform, or import errors.
 - The active detector is reported in world health (`face_detector` component) and in `/api/vision/frame` response (`vision_status.face_detector`).
+- The `/api/vision/frame` response also includes `vision_status.object_detector` with the object detector's health.
+- The dashboard Perception panel shows status badges ("Active", "Degraded", "Disabled") for both face and object detectors. The Device panel overlay shows the active gaze source, pose source, and yaw/pitch angles when available.
+- The heuristic fallback is not suitable for evaluation claims and exists only to prevent the demo from failing completely when proper models are unavailable.
 
 ## Identity and speakers
 
