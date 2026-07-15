@@ -16,7 +16,7 @@ from social_lamp.domain.contracts import ComponentHealth
 from social_lamp.memory.repository import MemoryRepository
 from social_lamp.perception.faces import MediaPipeFaceLandmarkerProcessor, OpenCvFaceProcessor
 from social_lamp.perception.location import BBox
-from social_lamp.perception.objects import Detection, NullObjectDetector
+from social_lamp.perception.objects import Detection, NullObjectDetector, YoloObjectDetector
 from social_lamp.runtime.coordinator import RuntimeCoordinator
 from social_lamp.runtime.providers import build_conversation_provider
 from social_lamp.world.model import WorldModel
@@ -31,6 +31,22 @@ class RuntimeMetrics:
 
     def counter(self, name: str, **labels: str) -> int:
         return self._counters[(name, tuple(sorted(labels.items())))]
+
+
+def _build_object_detector(settings: Settings) -> NullObjectDetector | YoloObjectDetector:
+    if not settings.enable_object_detection:
+        return NullObjectDetector()
+    try:
+        class_ids = None
+        if settings.object_detection_classes is not None:
+            class_ids = [int(c.strip()) for c in settings.object_detection_classes.split(",")]
+        return YoloObjectDetector(
+            model_path=settings.object_detector_model,
+            confidence=settings.object_detection_confidence,
+            classes=class_ids,
+        )
+    except Exception:
+        return NullObjectDetector()
 
 
 async def build_live_runtime(
@@ -59,7 +75,15 @@ async def build_live_runtime(
 
     if resolved_settings.enable_live_capture:
         camera_source = OpenCVCameraSource(camera_index=resolved_settings.camera_index)
-        object_detector = NullObjectDetector()
+        object_detector = _build_object_detector(resolved_settings)
+        world.replace(
+            world.snapshot.model_copy(
+                update={
+                    "revision": world.snapshot.revision + 1,
+                    "health": world.snapshot.health + (object_detector.health(),),
+                }
+            )
+        )
         audio_source = SoundDeviceMicrophoneStream()
         audio_classifier = SimpleVadClassifier()
         landmark_exc: RuntimeError | None = None

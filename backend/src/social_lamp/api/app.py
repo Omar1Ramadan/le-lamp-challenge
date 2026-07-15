@@ -21,7 +21,7 @@ from social_lamp.perception.faces import (
     OpenCvFaceProcessor,
 )
 from social_lamp.runtime.coordinator import RuntimeCoordinator
-from social_lamp.perception.objects import NullObjectDetector
+from social_lamp.perception.objects import NullObjectDetector, YoloObjectDetector
 from social_lamp.runtime.live import build_live_runtime
 
 
@@ -301,9 +301,26 @@ def _browser_face_processor(
     )
 
 
-def _browser_object_detector(app: FastAPI) -> NullObjectDetector:
+def _browser_object_detector(app: FastAPI) -> NullObjectDetector | YoloObjectDetector:
     detector = getattr(app.state, "browser_object_detector", None)
     if detector is None:
-        detector = NullObjectDetector()
+        detector = _build_browser_object_detector()
         app.state.browser_object_detector = detector
-    return cast(NullObjectDetector, detector)
+    return cast(NullObjectDetector | YoloObjectDetector, detector)
+
+
+def _build_browser_object_detector() -> NullObjectDetector | YoloObjectDetector:
+    settings = Settings()
+    if not settings.enable_object_detection:
+        return NullObjectDetector()
+    try:
+        class_ids = None
+        if settings.object_detection_classes is not None:
+            class_ids = [int(c.strip()) for c in settings.object_detection_classes.split(",")]
+        return YoloObjectDetector(
+            model_path=settings.object_detector_model,
+            confidence=settings.object_detection_confidence,
+            classes=class_ids,
+        )
+    except Exception:
+        return NullObjectDetector()

@@ -523,7 +523,13 @@ class RuntimeCoordinator:
                 "people": people,
                 "objects": tuple(objects) if objects else snapshot.objects,
                 "health": _replace_health(
-                    snapshot.health, ComponentHealth(component="vision", status="ok")
+                    _replace_health(
+                        snapshot.health,
+                        ComponentHealth(component="vision", status="ok"),
+                    ),
+                    object_detector.health() if hasattr(object_detector, "health") else ComponentHealth(
+                        component="object_detector", status="disabled"
+                    ),
                 ),
             }
         )
