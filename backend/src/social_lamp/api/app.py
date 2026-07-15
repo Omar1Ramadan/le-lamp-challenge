@@ -21,7 +21,8 @@ from social_lamp.perception.faces import (
     OpenCvFaceProcessor,
 )
 from social_lamp.runtime.coordinator import RuntimeCoordinator
-from social_lamp.runtime.live import NullObjectDetector, build_live_runtime
+from social_lamp.perception.objects import NullObjectDetector
+from social_lamp.runtime.live import build_live_runtime
 
 
 class ReplayRequest(BaseModel):

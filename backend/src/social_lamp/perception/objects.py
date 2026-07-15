@@ -6,6 +6,7 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from social_lamp.domain.contracts import ComponentHealth
 from social_lamp.perception.location import BBox
 
 
@@ -42,6 +43,19 @@ class ObjectTrack:
         return count / len(recent) >= 0.75
 
 
+class NullObjectDetector:
+    def detect(self, image: object) -> tuple[Detection, ...]:
+        del image
+        return ()
+
+    def health(self) -> ComponentHealth:
+        return ComponentHealth(
+            component="object_detector",
+            status="disabled",
+            detail="Object detection model is not configured",
+        )
+
+
 class ObjectDetectorModel(Protocol):
     def predict(self, image: NDArray[np.uint8]) -> list[Detection]: ...
 
@@ -52,6 +66,12 @@ class FastObjectDetector:
 
     def detect(self, image: NDArray[np.uint8]) -> tuple[Detection, ...]:
         return tuple(self._model.predict(image))
+
+    def health(self) -> ComponentHealth:
+        return ComponentHealth(
+            component="object_detector",
+            status="active",
+        )
 
 
 class EnrichmentQueue:

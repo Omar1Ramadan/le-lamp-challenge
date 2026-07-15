@@ -16,7 +16,7 @@ from social_lamp.domain.contracts import ComponentHealth
 from social_lamp.memory.repository import MemoryRepository
 from social_lamp.perception.faces import MediaPipeFaceLandmarkerProcessor, OpenCvFaceProcessor
 from social_lamp.perception.location import BBox
-from social_lamp.perception.objects import Detection
+from social_lamp.perception.objects import Detection, NullObjectDetector
 from social_lamp.runtime.coordinator import RuntimeCoordinator
 from social_lamp.runtime.providers import build_conversation_provider
 from social_lamp.world.model import WorldModel
@@ -31,12 +31,6 @@ class RuntimeMetrics:
 
     def counter(self, name: str, **labels: str) -> int:
         return self._counters[(name, tuple(sorted(labels.items())))]
-
-
-class NullObjectDetector:
-    def detect(self, image: object) -> tuple[Detection, ...]:
-        del image
-        return ()
 
 
 async def build_live_runtime(
