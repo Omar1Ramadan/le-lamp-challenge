@@ -125,7 +125,7 @@ function App() {
             {lampAction}
           </div>
         </section>
-        <PerceptionPanel people={world?.people ?? []} objects={world?.objects ?? []} />
+        <PerceptionPanel people={world?.people ?? []} objects={world?.objects ?? []} health={world?.health ?? []} />
         <EvidenceTimeline evidence={state.evidence} />
         <DevicePanel
           onBehaviorTimeline={(timeline) => {

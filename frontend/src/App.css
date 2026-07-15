@@ -91,6 +91,21 @@
   color: #b9c5df;
 }
 
+.panel .status-disabled {
+  color: #888;
+  font-style: italic;
+}
+
+.panel .status-degraded {
+  color: #cc8800;
+}
+
+.panel .status-detail {
+  font-size: 0.85em;
+  color: #888;
+  word-break: break-word;
+}
+
 .device-panel {
   display: grid;
   gap: 0.75rem;
