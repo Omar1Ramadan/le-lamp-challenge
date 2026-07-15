@@ -7,6 +7,7 @@ describe("Inspector", () => {
     render(
       <Inspector
         state="engaged"
+        audioMode="silent"
         evidence={[{ id: "observation-1", label: "keys", location: "right side of desk" }]}
         health={[{ component: "cloud", status: "degraded", detail: "offline fallback" }]}
       />,

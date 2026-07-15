@@ -10,8 +10,6 @@ export function PerceptionPanel({ people, objects, health }: PerceptionPanelProp
   const objectDetectorHealth = health.find((h) => h.component === "object_detector");
   const isObjectDetectionDisabled = objectDetectorHealth?.status === "disabled";
   const isObjectDetectionDegraded = objectDetectorHealth?.status === "degraded";
-  const isObjectDetectionActive = objectDetectorHealth?.status === "active";
-
   const objectSummary = isObjectDetectionDisabled
     ? "Object detection disabled"
     : isObjectDetectionDegraded

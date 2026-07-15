@@ -34,6 +34,9 @@ from social_lamp.perception.location import BBox, locate_box
 from social_lamp.perception.objects import Detection, ObjectTrack
 from social_lamp.replay.trace import TraceManifest, TraceReader, TraceRecord, write_trace
 
+FACE_MISSING_GRACE_MS = 600
+FACE_TRACK_EXPIRE_MS = 1500
+
 
 class SimulatorPort(Protocol):
     @property
@@ -134,6 +137,10 @@ class RuntimeCoordinator:
         self._audio_source = audio_source
         self._audio_classifier = audio_classifier
         self._snapshot_publisher = snapshot_publisher
+        self._last_person: PersonState | None = None
+        self._last_person_seen_mono_ns: int | None = None
+        self._last_social_state = SocialState.IDLE
+        self._face_missing_since_mono_ns: int | None = None
 
     @classmethod
     def for_test(cls, *, database: Path) -> RuntimeCoordinator:
@@ -479,10 +486,48 @@ class RuntimeCoordinator:
             )
             people = (person,)
             primary_person_id = "person-1"
+            self._last_person = person
+            self._last_person_seen_mono_ns = frame.mono_ns
+            self._last_social_state = social_state
+            self._face_missing_since_mono_ns = None
         else:
-            people = ()
-            social_state = SocialState.DISENGAGED if snapshot.people else SocialState.IDLE
-            primary_person_id = None
+            if self._face_missing_since_mono_ns is None:
+                self._face_missing_since_mono_ns = frame.mono_ns
+            elapsed_ms = (
+                (frame.mono_ns - self._last_person_seen_mono_ns) / 1_000_000
+                if self._last_person_seen_mono_ns is not None
+                else float("inf")
+            )
+
+            if self._last_person is not None and elapsed_ms < FACE_MISSING_GRACE_MS:
+                decayed = self._last_person.model_copy(
+                    update={
+                        "engagement_confidence": round(
+                            self._last_person.engagement_confidence * 0.5, 2
+                        ),
+                    }
+                )
+                people = (decayed,)
+                social_state = self._last_social_state
+                primary_person_id = "person-1"
+            elif self._last_person is not None and elapsed_ms < FACE_TRACK_EXPIRE_MS:
+                decayed = self._last_person.model_copy(
+                    update={
+                        "engagement_confidence": round(
+                            self._last_person.engagement_confidence * 0.2, 2
+                        ),
+                    }
+                )
+                people = (decayed,)
+                social_state = self._last_social_state
+                primary_person_id = "person-1"
+            else:
+                people = ()
+                social_state = SocialState.DISENGAGED if snapshot.people else SocialState.IDLE
+                primary_person_id = None
+                self._last_person = None
+                self._last_person_seen_mono_ns = None
+                self._face_missing_since_mono_ns = None
 
         objects: list[ObjectState] = []
         for detection in detections:

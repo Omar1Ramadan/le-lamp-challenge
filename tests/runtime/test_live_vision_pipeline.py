@@ -100,7 +100,7 @@ async def test_live_frame_degrades_health_when_model_fails(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_live_frame_clears_people_when_face_leaves_frame(tmp_path: Path) -> None:
+async def test_live_frame_preserves_person_for_brief_missed_detection(tmp_path: Path) -> None:
     coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
     try:
         face = FaceResult(
@@ -111,23 +111,93 @@ async def test_live_frame_clears_people_when_face_leaves_frame(tmp_path: Path) -
             gaze_quality=0.9,
             face_area_ratio=0.12,
         )
-        frame = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10)
+        frame1 = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10_000_000)
         await coordinator.process_vision_frame(
-            frame,
+            frame1,
             face_processor=FakeFaceProcessor((face,)),
             object_detector=FakeObjectDetector(),
             anchors={},
         )
         assert len(coordinator.world.snapshot.people) == 1
 
+        frame2 = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10_100_000)
         await coordinator.process_vision_frame(
-            CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=11),
+            frame2,
             face_processor=FakeFaceProcessor(),
             object_detector=FakeObjectDetector(),
             anchors={},
         )
 
+        people = coordinator.world.snapshot.people
+        assert len(people) == 1
+        assert people[0].person_id == "person-1"
+        assert people[0].engagement_confidence == round(0.9 * 0.5, 2)
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_live_frame_clears_person_after_missing_expiry(tmp_path: Path) -> None:
+    coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
+    try:
+        face = FaceResult(
+            face_confidence=0.9,
+            yaw_degrees=0.0,
+            pitch_degrees=0.0,
+            gaze_score=0.8,
+            gaze_quality=0.9,
+            face_area_ratio=0.12,
+        )
+        frame1 = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=0)
+        await coordinator.process_vision_frame(
+            frame1,
+            face_processor=FakeFaceProcessor((face,)),
+            object_detector=FakeObjectDetector(),
+            anchors={},
+        )
+        assert len(coordinator.world.snapshot.people) == 1
+
+        frame2 = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=2_000_000_000)
+        await coordinator.process_vision_frame(
+            frame2,
+            face_processor=FakeFaceProcessor(),
+            object_detector=FakeObjectDetector(),
+            anchors={},
+        )
         assert coordinator.world.snapshot.people == ()
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_missing_face_does_not_create_new_engagement_transition(tmp_path: Path) -> None:
+    coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
+    try:
+        face = FaceResult(
+            face_confidence=0.9,
+            yaw_degrees=0.0,
+            pitch_degrees=0.0,
+            gaze_score=0.8,
+            gaze_quality=0.9,
+            face_area_ratio=0.12,
+        )
+        frame1 = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10_000_000)
+        await coordinator.process_vision_frame(
+            frame1,
+            face_processor=FakeFaceProcessor((face,)),
+            object_detector=FakeObjectDetector(),
+            anchors={},
+        )
+        first_state = coordinator.world.snapshot.social_state
+
+        frame2 = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10_100_000)
+        await coordinator.process_vision_frame(
+            frame2,
+            face_processor=FakeFaceProcessor(),
+            object_detector=FakeObjectDetector(),
+            anchors={},
+        )
+        assert coordinator.world.snapshot.social_state == first_state
     finally:
         await coordinator.stop()
 
