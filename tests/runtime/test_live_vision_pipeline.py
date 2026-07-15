@@ -261,7 +261,9 @@ async def test_active_detector_with_objects_updates_world(tmp_path: Path) -> Non
         def detect(self, image: np.ndarray) -> tuple[Detection, ...]:
             self._call_count += 1
             bbox: BBox = (0.1, 0.1, 0.5, 0.5)
-            return (Detection(label="bottle", confidence=0.9, bbox=bbox, mono_ns=10 + self._call_count),)  # noqa: E501
+            return (
+                Detection(label="bottle", confidence=0.9, bbox=bbox, mono_ns=10 + self._call_count),
+            )  # noqa: E501
 
         def health(self) -> ComponentHealth:
             return ComponentHealth(component="object_detector", status="active")
@@ -278,8 +280,7 @@ async def test_active_detector_with_objects_updates_world(tmp_path: Path) -> Non
         snapshot = coordinator.world.snapshot
         assert any(obj.label == "bottle" for obj in snapshot.objects)
         assert any(
-            h.component == "object_detector" and h.status == "active"
-            for h in snapshot.health
+            h.component == "object_detector" and h.status == "active" for h in snapshot.health
         )
     finally:
         await coordinator.stop()

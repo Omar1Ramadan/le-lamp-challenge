@@ -95,8 +95,7 @@ def test_browser_vision_frame_with_disabled_detector_reports_disabled_health() -
         assert response.status_code == 200
         health = response.json()["world_snapshot"]["health"]
         assert any(
-            h["component"] == "object_detector" and h["status"] == "disabled"
-            for h in health
+            h["component"] == "object_detector" and h["status"] == "disabled" for h in health
         )
 
 

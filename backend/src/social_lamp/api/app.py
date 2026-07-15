@@ -15,11 +15,7 @@ from pydantic import BaseModel
 from social_lamp.api.hub import ConnectionHub
 from social_lamp.capture.frames import CapturedFrame
 from social_lamp.config import Settings
-from social_lamp.perception.faces import (
-    HeuristicFaceProcessor,
-    MediaPipeFaceLandmarkerProcessor,
-    OpenCvFaceProcessor,
-)
+from social_lamp.perception.faces import build_face_detector
 from social_lamp.perception.objects import NullObjectDetector, YoloObjectDetector
 from social_lamp.runtime.coordinator import RuntimeCoordinator
 from social_lamp.runtime.live import build_live_runtime
@@ -272,33 +268,17 @@ def _decode_browser_frame(image_base64: str) -> CapturedFrame:
     return CapturedFrame(image=image, mono_ns=monotonic_ns())
 
 
-def _browser_face_processor(
-    app: FastAPI,
-) -> MediaPipeFaceLandmarkerProcessor | OpenCvFaceProcessor | HeuristicFaceProcessor:
+def _browser_face_processor(app: FastAPI) -> object | None:
     processor = getattr(app.state, "browser_face_processor", None)
     if processor is None:
-        landmark_exc: RuntimeError | None = None
-        if Settings().enable_mediapipe_face_landmarker:
-            try:
-                processor = MediaPipeFaceLandmarkerProcessor()
-                app.state.browser_face_processor_degraded = None
-            except RuntimeError as exc:
-                landmark_exc = exc
-        if processor is None:
-            try:
-                processor = OpenCvFaceProcessor()
-                app.state.browser_face_processor_degraded = (
-                    str(landmark_exc) if landmark_exc is not None else None
-                )
-            except RuntimeError as opencv_exc:
-                processor = HeuristicFaceProcessor()
-                details = [str(exc) for exc in (landmark_exc, opencv_exc) if exc is not None]
-                app.state.browser_face_processor_degraded = "; ".join(details)
+        processor, metadata = build_face_detector(Settings())
         app.state.browser_face_processor = processor
-    return cast(
-        MediaPipeFaceLandmarkerProcessor | OpenCvFaceProcessor | HeuristicFaceProcessor,
-        processor,
-    )
+        app.state.browser_face_processor_metadata = metadata
+        if metadata.status == "degraded":
+            app.state.browser_face_processor_degraded = metadata.detail
+        else:
+            app.state.browser_face_processor_degraded = None
+    return processor
 
 
 def _browser_object_detector(app: FastAPI) -> NullObjectDetector | YoloObjectDetector:

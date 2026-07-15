@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,21 +34,24 @@ class Settings(BaseSettings):
     enable_mediapipe_face_landmarker: bool = Field(
         default=False, validation_alias="ENABLE_MEDIAPIPE_FACE_LANDMARKER"
     )
+    face_detector_mode: str = Field(default="auto", validation_alias="FACE_DETECTOR_MODE")
     enable_cloud_conversation: bool = Field(
         default=False, validation_alias="ENABLE_CLOUD_CONVERSATION"
     )
-    enable_object_detection: bool = Field(
-        default=False, validation_alias="ENABLE_OBJECT_DETECTION"
-    )
+    enable_object_detection: bool = Field(default=False, validation_alias="ENABLE_OBJECT_DETECTION")
     object_detector_model: str = Field(
         default="yolov8n.pt", validation_alias="OBJECT_DETECTOR_MODEL"
     )
     object_detection_confidence: float = Field(
         default=0.45, validation_alias="OBJECT_DETECTION_CONFIDENCE"
     )
-    object_detection_max_fps: int = Field(
-        default=8, validation_alias="OBJECT_DETECTION_MAX_FPS"
-    )
+    object_detection_max_fps: int = Field(default=8, validation_alias="OBJECT_DETECTION_MAX_FPS")
     object_detection_classes: str | None = Field(
         default=None, validation_alias="OBJECT_DETECTION_CLASSES"
     )
+
+    @model_validator(mode="after")
+    def _reconcile_face_detector_mode(self) -> Settings:
+        if self.enable_mediapipe_face_landmarker and self.face_detector_mode == "auto":
+            self.face_detector_mode = "mediapipe"
+        return self

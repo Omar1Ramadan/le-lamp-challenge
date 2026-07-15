@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
@@ -6,7 +9,25 @@ import numpy as np
 from numpy.typing import NDArray
 
 from social_lamp.capture.frames import CapturedFrame
+from social_lamp.config import Settings
 from social_lamp.perception.engagement import EngagementSignals
+
+
+@dataclass
+class FaceProcessorMetadata:
+    name: str
+    status: str  # "active" | "degraded" | "disabled"
+    detail: str | None = None
+    model_path: str | None = None
+
+
+class FaceDetectorMode(StrEnum):
+    AUTO = "auto"
+    MEDIAPIPE = "mediapipe"
+    OPENCV = "opencv"
+    HEURISTIC = "heuristic"
+    DISABLED = "disabled"
+
 
 MAX_FRAME_AGE_NS = 300_000_000
 DEFAULT_FACE_LANDMARKER_MODEL = (
@@ -73,9 +94,7 @@ def _opencv_eye_attention(
     separation_score = _clamp(1.0 - abs(separation - 0.36) / 0.28)
     height_score = _clamp(1.0 - abs(average_y - 0.32) / 0.22)
     level_score = _clamp(1.0 - vertical_delta / 0.16)
-    attention = _clamp(
-        0.15 + 0.35 * separation_score + 0.3 * height_score + 0.2 * level_score
-    )
+    attention = _clamp(0.15 + 0.35 * separation_score + 0.3 * height_score + 0.2 * level_score)
     return attention, normalized
 
 
@@ -167,6 +186,9 @@ class MediaPipeFaceLandmarkerProcessor:
         )
         self._mp = mp
         self._landmarker = face_landmarker.FaceLandmarker.create_from_options(options)
+        self.metadata = FaceProcessorMetadata(
+            name="mediapipe_face_landmarker", status="active", model_path=str(model_path)
+        )
         self.last_debug: dict[str, object] | None = None
 
     def process(self, frame: CapturedFrame, *, now_mono_ns: int) -> tuple[FaceResult, ...]:
@@ -250,6 +272,7 @@ class OpenCvFaceProcessor:
         self._eye_cascade = (
             eye_cascade if eye_cascade is not None and not eye_cascade.empty() else None
         )
+        self.metadata = FaceProcessorMetadata(name="opencv_haar", status="active")
         self.last_debug: dict[str, object] | None = None
 
     def process(self, frame: CapturedFrame, *, now_mono_ns: int) -> tuple[FaceResult, ...]:
@@ -324,9 +347,7 @@ class OpenCvFaceProcessor:
         upper_face = grayscale[y : y + max(h // 2, 1), x : x + w]
         if upper_face.size == 0:
             return ()
-        detections = self._eye_cascade.detectMultiScale(
-            upper_face, scaleFactor=1.1, minNeighbors=4
-        )
+        detections = self._eye_cascade.detectMultiScale(upper_face, scaleFactor=1.1, minNeighbors=4)
         return tuple((int(ex), int(ey), int(ew), int(eh)) for ex, ey, ew, eh in detections)
 
 
@@ -334,6 +355,9 @@ class HeuristicFaceProcessor:
     detail = "face model unavailable; using browser-frame heuristic"
 
     def __init__(self) -> None:
+        self.metadata = FaceProcessorMetadata(
+            name="heuristic_skin_region", status="active", detail=self.detail
+        )
         self.last_debug: dict[str, object] | None = None
 
     def process(self, frame: CapturedFrame, *, now_mono_ns: int) -> tuple[FaceResult, ...]:
@@ -409,3 +433,64 @@ class HeuristicFaceProcessor:
                 face_area_ratio=min(face_area_ratio, 0.15),
             ),
         )
+
+
+def build_face_detector(settings: Settings) -> tuple[object | None, FaceProcessorMetadata]:
+    mode = FaceDetectorMode(settings.face_detector_mode)
+
+    if mode == FaceDetectorMode.DISABLED:
+        return (
+            None,
+            FaceProcessorMetadata(
+                name="none", status="disabled", detail="face detection disabled by config"
+            ),
+        )
+
+    if mode == FaceDetectorMode.HEURISTIC:
+        processor = HeuristicFaceProcessor()
+        return (processor, processor.metadata)
+
+    if mode == FaceDetectorMode.OPENCV:
+        try:
+            processor = OpenCvFaceProcessor()
+            return (processor, processor.metadata)
+        except RuntimeError:
+            fallback = HeuristicFaceProcessor()
+            meta = FaceProcessorMetadata(
+                name=fallback.metadata.name,
+                status="degraded",
+                detail=fallback.metadata.detail,
+            )
+            return (fallback, meta)
+
+    if mode == FaceDetectorMode.MEDIAPIPE:
+        try:
+            processor = MediaPipeFaceLandmarkerProcessor()
+            return (processor, processor.metadata)
+        except RuntimeError:
+            fallback = HeuristicFaceProcessor()
+            meta = FaceProcessorMetadata(
+                name=fallback.metadata.name,
+                status="degraded",
+                detail=fallback.metadata.detail,
+            )
+            return (fallback, meta)
+
+    # auto: try mediapipe -> opencv -> heuristic
+    try:
+        processor = MediaPipeFaceLandmarkerProcessor()
+        return (processor, processor.metadata)
+    except RuntimeError:
+        pass
+    try:
+        processor = OpenCvFaceProcessor()
+        return (processor, processor.metadata)
+    except RuntimeError:
+        pass
+    fallback = HeuristicFaceProcessor()
+    meta = FaceProcessorMetadata(
+        name=fallback.metadata.name,
+        status="degraded",
+        detail=fallback.metadata.detail,
+    )
+    return (fallback, meta)
