@@ -563,6 +563,17 @@ class RuntimeCoordinator:
             if hasattr(object_detector, "health")
             else ComponentHealth(component="object_detector", status="disabled")
         )
+        metadata = getattr(face_processor, "metadata", None)
+        if metadata is not None:
+            face_health = ComponentHealth(
+                component="face_detector",
+                status=metadata.status,
+                detail=f"{metadata.name}: {metadata.detail}" if metadata.detail else metadata.name,
+            )
+        else:
+            face_health = ComponentHealth(
+                component="face_detector", status="unknown", detail="no metadata available"
+            )
         current = snapshot.model_copy(
             update={
                 "snapshot_id": uuid7(),
@@ -574,8 +585,11 @@ class RuntimeCoordinator:
                 "objects": tuple(objects) if objects else snapshot.objects,
                 "health": _replace_health(
                     _replace_health(
-                        snapshot.health,
-                        ComponentHealth(component="vision", status="ok"),
+                        _replace_health(
+                            snapshot.health,
+                            ComponentHealth(component="vision", status="ok"),
+                        ),
+                        face_health,
                     ),
                     detector_health,
                 ),

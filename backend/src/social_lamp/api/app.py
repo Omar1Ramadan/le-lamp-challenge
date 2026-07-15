@@ -195,12 +195,23 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
         degraded_detail = getattr(request.app.state, "browser_face_processor_degraded", None)
         if isinstance(degraded_detail, str):
             await coordinator._set_health("vision_model", "degraded", degraded_detail)
+        vision_status = None
+        browser_metadata = getattr(request.app.state, "browser_face_processor_metadata", None)
+        if browser_metadata is not None:
+            vision_status = {
+                "face_detector": {
+                    "name": browser_metadata.name,
+                    "status": browser_metadata.status,
+                    "detail": browser_metadata.detail,
+                }
+            }
         return {
             "ok": True,
             "revision": coordinator.world.snapshot.revision,
             "world_snapshot": coordinator.world.snapshot.model_dump(mode="json"),
             "behavior_timeline": timeline.model_dump(mode="json") if timeline is not None else None,
             "vision_debug": getattr(_browser_face_processor(request.app), "last_debug", None),
+            "vision_status": vision_status,
         }
 
     @app.post("/api/neutralize")
