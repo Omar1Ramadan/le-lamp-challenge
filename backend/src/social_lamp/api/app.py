@@ -182,6 +182,30 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
         )
         return {"ok": True, "response": response.__dict__}
 
+    @app.get("/api/calibration/engagement")
+    async def engagement_calibration(request: Request) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
+        return cast(
+            dict[str, object],
+            coordinator.engagement_calibration_status().model_dump(mode="json"),
+        )
+
+    @app.post("/api/calibration/engagement/start")
+    async def start_engagement_calibration(request: Request) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
+        return cast(
+            dict[str, object],
+            coordinator.start_engagement_calibration().model_dump(mode="json"),
+        )
+
+    @app.post("/api/calibration/engagement/cancel")
+    async def cancel_engagement_calibration(request: Request) -> dict[str, object]:
+        coordinator = _coordinator(request.app)
+        return cast(
+            dict[str, object],
+            coordinator.cancel_engagement_calibration().model_dump(mode="json"),
+        )
+
     @app.post("/api/vision/frame")
     async def vision_frame(request: Request, body: VisionFrameRequest) -> dict[str, object]:
         coordinator = _coordinator(request.app)
@@ -258,8 +282,13 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
                 message = await websocket.receive_json()
                 if message.get("type") == "simulator_ack":
                     body = message.get("body", {})
-                    if isinstance(body, dict):
-                        hub.record_ack(str(body.get("timeline_id")), str(body.get("stage")))
+                    if not isinstance(body, dict):
+                        continue
+                    timeline_id = str(body.get("timeline_id", ""))
+                    ack_type = str(body.get("ack_type", ""))
+                    if timeline_id and ack_type:
+                        hub.record_ack(timeline_id, ack_type)
+                        coordinator.simulator.handle_ack(body)
         except WebSocketDisconnect:
             hub.disconnect(websocket)
 

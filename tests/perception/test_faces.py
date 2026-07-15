@@ -1,4 +1,5 @@
 import numpy as np
+import social_lamp.perception.faces as faces_module
 from social_lamp.capture.frames import CapturedFrame
 from social_lamp.config import Settings
 from social_lamp.perception.faces import (
@@ -45,6 +46,24 @@ def test_face_mapping_clamps_values() -> None:
     assert signals.head_toward == 0.0
     assert signals.gaze_toward == 1.0
     assert signals.proximity == 1.0
+
+
+def test_face_result_has_bbox_field() -> None:
+    result = FaceResult(
+        face_confidence=0.9,
+        yaw_degrees=0.0,
+        pitch_degrees=0.0,
+        gaze_score=0.8,
+        gaze_quality=0.9,
+        face_area_ratio=0.12,
+    )
+
+    bx, by, bw, bh = result.bbox
+
+    assert 0.0 <= bx <= 1.0
+    assert 0.0 <= by <= 1.0
+    assert 0.0 < bw <= 1.0
+    assert 0.0 < bh <= 1.0
 
 
 def test_mediapipe_adapter_skips_stale_frames_without_calling_landmarker() -> None:
@@ -103,6 +122,32 @@ def test_build_face_detector_opencv_returns_opencv() -> None:
     assert isinstance(processor, OpenCvFaceProcessor)
     assert metadata.name == "opencv_haar"
     assert metadata.status == "active"
+
+
+def test_build_face_detector_passes_max_faces_to_mediapipe(monkeypatch) -> None:
+    captured: list[int] = []
+
+    class FakeMediaPipeProcessor:
+        def __init__(self, *, num_faces: int) -> None:
+            captured.append(num_faces)
+            self.metadata = faces_module.FaceProcessorMetadata(
+                name="mediapipe_face_landmarker", status="active"
+            )
+
+    monkeypatch.setattr(
+        faces_module, "MediaPipeFaceLandmarkerProcessor", FakeMediaPipeProcessor
+    )
+
+    settings = Settings(
+        _env_file=None,
+        face_detector_mode="mediapipe",
+        face_detection_max_faces=6,
+    )
+
+    _, metadata = build_face_detector(settings)
+
+    assert captured == [6]
+    assert metadata.name == "mediapipe_face_landmarker"
 
 
 def test_build_face_detector_metadata_matches_processor() -> None:

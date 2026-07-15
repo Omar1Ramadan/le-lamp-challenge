@@ -61,6 +61,22 @@ def test_replays_endpoint_lists_local_fixtures() -> None:
         assert "core-journey" in replay_ids
 
 
+def test_engagement_calibration_endpoints() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get("/api/calibration/engagement")
+        assert response.status_code == 200
+        assert response.json()["state"] == "uncalibrated"
+        assert response.json()["mode"] == "fallback"
+
+        start = client.post("/api/calibration/engagement/start")
+        assert start.status_code == 200
+        assert start.json()["state"] == "calibrating"
+
+        cancel = client.post("/api/calibration/engagement/cancel")
+        assert cancel.status_code == 200
+        assert cancel.json()["state"] == "uncalibrated"
+
+
 def test_browser_vision_frame_updates_people() -> None:
     with TestClient(create_app()) as client:
         client.app.state.browser_face_processor = FakeFaceProcessor()

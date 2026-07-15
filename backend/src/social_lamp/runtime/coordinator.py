@@ -22,6 +22,7 @@ from social_lamp.domain.contracts import (
     AudioMode,
     BehaviorTimeline,
     ComponentHealth,
+    EngagementCalibrationSnapshot,
     MemoryQuery,
     MemoryResult,
     ObjectState,
@@ -30,10 +31,11 @@ from social_lamp.domain.contracts import (
     WorldSnapshot,
 )
 from social_lamp.memory.repository import ObservationWrite
-from social_lamp.perception.engagement import EngagementEstimator
-from social_lamp.perception.faces import FaceResult, face_result_to_signals
+from social_lamp.perception.engagement import EngagementCalibrationStatus, EngagementEstimator
+from social_lamp.perception.faces import face_result_to_signals
 from social_lamp.perception.location import BBox, locate_box
 from social_lamp.perception.objects import Detection, ObjectTrack
+from social_lamp.perception.tracker import PersonTrack, PersonTracker
 from social_lamp.replay.trace import TraceManifest, TraceReader, TraceRecord, write_trace
 from social_lamp.world.commands import AudioUpdate, HealthUpdate, Source, VisionUpdate
 
@@ -63,6 +65,8 @@ class SimulatorPort(Protocol):
     async def execute(self, timeline: BehaviorTimeline) -> object: ...
 
     async def neutralize(self) -> None: ...
+
+    def handle_ack(self, body: dict[str, object]) -> None: ...
 
 
 class MetricsPort(Protocol):
@@ -138,6 +142,7 @@ class RuntimeCoordinator:
         audio_source: AudioSource | None = None,
         audio_classifier: object | None = None,
         snapshot_publisher: Callable[[dict[str, object]], Awaitable[None]] | None = None,
+        object_detection_max_fps: int = 0,
     ) -> None:
         self.world = world
         self.simulator = simulator
@@ -152,7 +157,8 @@ class RuntimeCoordinator:
         self._object_tracks: dict[str, ObjectTrack] = {}
         self._object_memory_state: dict[str, ObjectMemoryState] = {}
         self._audio_analyzer = AudioAnalyzer()
-        self._engagement_estimator = EngagementEstimator()
+        self._engagement_estimators: dict[str, EngagementEstimator] = {}
+        self._engagement_calibration = EngagementEstimator()
         self.audio_state = AudioState(False, False, None)
         self.bonuses_enabled = False
         self.replay_messages: list[tuple[str, dict[str, object]]] = []
@@ -163,10 +169,16 @@ class RuntimeCoordinator:
         self._audio_source = audio_source
         self._audio_classifier = audio_classifier
         self._snapshot_publisher = snapshot_publisher
-        self._last_person: PersonState | None = None
-        self._last_person_seen_mono_ns: int | None = None
         self._last_social_state = SocialState.IDLE
-        self._face_missing_since_mono_ns: int | None = None
+        self._person_tracker = PersonTracker(
+            track_expire_ns=FACE_TRACK_EXPIRE_MS * 1_000_000
+        )
+        self._previous_primary_person_id: str | None = None
+        self._primary_candidate_person_id: str | None = None
+        self._primary_candidate_frames = 0
+        self._object_detection_max_fps = object_detection_max_fps
+        self._last_object_inference_mono_ns: int = 0
+        self._object_detection_skipped_frames: int = 0
 
     @classmethod
     def for_test(cls, *, database: Path) -> RuntimeCoordinator:
@@ -177,6 +189,45 @@ class RuntimeCoordinator:
     @property
     def running(self) -> bool:
         return self._running
+
+    def start_engagement_calibration(
+        self,
+        *,
+        mono_ns: int | None = None,
+    ) -> EngagementCalibrationSnapshot:
+        snapshot = self.world.snapshot
+        status = self._engagement_calibration.start_calibration(
+            snapshot.primary_person_id,
+            mono_ns if mono_ns is not None else snapshot.as_of_mono_ns,
+        )
+        return self._set_engagement_calibration_status(status)
+
+    def cancel_engagement_calibration(self) -> EngagementCalibrationSnapshot:
+        status = self._engagement_calibration.cancel_calibration()
+        return self._set_engagement_calibration_status(status)
+
+    def engagement_calibration_status(
+        self,
+        *,
+        mono_ns: int | None = None,
+    ) -> EngagementCalibrationSnapshot:
+        status = self._engagement_calibration.calibration_status(mono_ns)
+        return self._set_engagement_calibration_status(status)
+
+    def _set_engagement_calibration_status(
+        self,
+        status: EngagementCalibrationStatus,
+    ) -> EngagementCalibrationSnapshot:
+        calibration = _calibration_snapshot(status)
+        self.world.replace(
+            self.world.snapshot.model_copy(
+                update={
+                    "revision": self.world.snapshot.revision + 1,
+                    "engagement_calibration": calibration,
+                }
+            )
+        )
+        return calibration
 
     async def start(self) -> None:
         if self._resources_closed:
@@ -272,6 +323,14 @@ class RuntimeCoordinator:
         current = self.world.apply_health(update)
         if current is not None:
             await self._publish_snapshot(current)
+
+    def _should_run_object_detection(self, mono_ns: int) -> bool:
+        if self._object_detection_max_fps <= 0:
+            return True
+        if self._last_object_inference_mono_ns == 0:
+            return True
+        min_interval_ns = 1_000_000_000 // self._object_detection_max_fps
+        return (mono_ns - self._last_object_inference_mono_ns) >= min_interval_ns
 
     async def _publish_snapshot(self, snapshot: WorldSnapshot) -> None:
         if self._snapshot_publisher is None:
@@ -453,71 +512,103 @@ class RuntimeCoordinator:
         previous = self.world.snapshot
         try:
             faces = tuple(face_processor.process(frame, now_mono_ns=frame.mono_ns))  # type: ignore[attr-defined]
-            detections = tuple(object_detector.detect(frame.image))  # type: ignore[attr-defined]
         except Exception as exc:
             await self._set_health("vision", "degraded", str(exc), mono_ns=frame.mono_ns)
             return None
 
-        if faces:
-            person, social_state = _person_from_face(
-                faces[0], self._engagement_estimator, frame.mono_ns
-            )
-            people = (person,)
-            primary_person_id = "person-1"
-            self._last_person = person
-            self._last_person_seen_mono_ns = frame.mono_ns
-            self._last_social_state = social_state
-            self._face_missing_since_mono_ns = None
+        detections: tuple[Detection, ...] = ()
+        if self._should_run_object_detection(frame.mono_ns):
+            try:
+                detections = tuple(object_detector.detect(frame.image))  # type: ignore[attr-defined]
+                self._last_object_inference_mono_ns = frame.mono_ns
+            except Exception as exc:
+                await self._set_health("vision", "degraded", str(exc), mono_ns=frame.mono_ns)
+                return None
         else:
-            if self._face_missing_since_mono_ns is None:
-                self._face_missing_since_mono_ns = frame.mono_ns
-            elapsed_ms = (
-                (frame.mono_ns - self._last_person_seen_mono_ns) / 1_000_000
-                if self._last_person_seen_mono_ns is not None
-                else float("inf")
+            self._object_detection_skipped_frames += 1
+
+        tracks = self._person_tracker.update(list(faces), frame.mono_ns)
+        visible_tracks = [track for track in tracks if track.visible]
+        engagement_scores: dict[str, float] = {}
+        track_states: dict[str, SocialState] = {}
+        people_list: list[PersonState] = []
+
+        for face in faces:
+            self._engagement_calibration.observe_calibration(face, frame.mono_ns)
+
+        for track in visible_tracks:
+            if track.last_face is None:
+                continue
+            estimator = self._engagement_estimators.setdefault(
+                track.person_id, EngagementEstimator()
+            )
+            person, social_state = _person_from_track(
+                track,
+                estimator,
+                frame.mono_ns,
+                calibration=self._engagement_calibration._calibration,
+            )
+            people_list.append(person)
+            engagement_scores[track.person_id] = person.engagement_score
+            track_states[track.person_id] = social_state
+
+        for track in tracks:
+            if track.visible:
+                continue
+            previous_person = next(
+                (person for person in previous.people if person.person_id == track.person_id),
+                None,
+            )
+            if previous_person is None:
+                continue
+            elapsed_ms = (frame.mono_ns - track.last_seen_mono_ns) / 1_000_000
+            decay_factor = 0.5 if elapsed_ms < FACE_MISSING_GRACE_MS else 0.2
+            people_list.append(
+                previous_person.model_copy(
+                    update={
+                        "engagement_confidence": round(
+                            previous_person.engagement_confidence * decay_factor, 2
+                        ),
+                    }
+                )
             )
 
-            if self._last_person is not None and elapsed_ms < FACE_MISSING_GRACE_MS:
-                decayed = self._last_person.model_copy(
-                    update={
-                        "engagement_confidence": round(
-                            self._last_person.engagement_confidence * 0.5, 2
-                        ),
-                    }
-                )
-                people = (decayed,)
-                social_state = self._last_social_state
-                primary_person_id = "person-1"
-            elif self._last_person is not None and elapsed_ms < FACE_TRACK_EXPIRE_MS:
-                decayed = self._last_person.model_copy(
-                    update={
-                        "engagement_confidence": round(
-                            self._last_person.engagement_confidence * 0.2, 2
-                        ),
-                    }
-                )
-                people = (decayed,)
-                social_state = self._last_social_state
-                primary_person_id = "person-1"
-            else:
-                people = ()
-                social_state = SocialState.DISENGAGED if previous.people else SocialState.IDLE
-                primary_person_id = None
-                self._last_person = None
-                self._last_person_seen_mono_ns = None
-                self._face_missing_since_mono_ns = None
+        active_track_ids = {track.person_id for track in tracks}
+        for person_id in list(self._engagement_estimators):
+            if person_id not in active_track_ids:
+                del self._engagement_estimators[person_id]
+
+        primary_person_id = self._select_primary_person_id(visible_tracks, engagement_scores)
+        if (
+            primary_person_id is not None
+            and self._engagement_calibration._calibration.state == "calibrating"
+            and self._engagement_calibration._calibration.person_id is None
+        ):
+            self._engagement_calibration._calibration.person_id = primary_person_id
+        if primary_person_id is not None:
+            social_state = track_states.get(primary_person_id, self._last_social_state)
+            self._last_social_state = social_state
+        elif people_list:
+            social_state = self._last_social_state
+        else:
+            social_state = SocialState.DISENGAGED if previous.people else SocialState.IDLE
+            self._last_social_state = social_state
+
+        people = tuple(people_list)
 
         objects: list[ObjectState] = []
         for detection in detections:
             track_id = f"track-{detection.label.strip().lower().replace(' ', '-')}"
-            track = self._object_tracks.setdefault(track_id, ObjectTrack(track_id=track_id))
-            track.add(detection)
-            if not track.is_stable:
+            object_track = self._object_tracks.setdefault(
+                track_id, ObjectTrack(track_id=track_id)
+            )
+            object_track.add(detection)
+            if not object_track.is_stable:
                 continue
             location = locate_box(detection.bbox, anchors=anchors)
             state = ObjectState(
-                track_id=track.track_id,
-                label=track.label,
+                track_id=object_track.track_id,
+                label=object_track.label,
                 confidence=detection.confidence,
                 horizontal_region=location.horizontal_region,
                 depth_band=location.depth_band,
@@ -608,6 +699,14 @@ class RuntimeCoordinator:
         current = self.world.apply_vision(update)
         if current is None:
             return None
+        current = current.model_copy(
+            update={
+                "engagement_calibration": _calibration_snapshot(
+                    self._engagement_calibration.calibration_status(frame.mono_ns)
+                )
+            }
+        )
+        self.world.replace(current)
         await self._publish_snapshot(current)
 
         intent = self._policy.on_transition(previous, current)
@@ -615,7 +714,53 @@ class RuntimeCoordinator:
             return None
         timeline = self._compositor.compose(intent, self.simulator.pose)
         await self.simulator.execute(timeline)
+        sim_health = getattr(self.simulator, "health", None)
+        if isinstance(sim_health, ComponentHealth):
+            current = current.model_copy(
+                update={"health": _replace_health(current.health, sim_health)}
+            )
+            self.world.replace(current)
+            await self._publish_snapshot(current)
         return timeline
+
+    def _select_primary_person_id(
+        self, visible_tracks: list[PersonTrack], engagement_scores: dict[str, float]
+    ) -> str | None:
+        if not visible_tracks:
+            self._previous_primary_person_id = None
+            self._primary_candidate_person_id = None
+            self._primary_candidate_frames = 0
+            return None
+
+        candidate = max(
+            visible_tracks,
+            key=lambda track: (
+                engagement_scores.get(track.person_id, 0.0),
+                track.bbox[2] * track.bbox[3],
+            ),
+        ).person_id
+        visible_ids = {track.person_id for track in visible_tracks}
+        previous = self._previous_primary_person_id
+        if previous is None or previous not in visible_ids:
+            self._previous_primary_person_id = candidate
+            self._primary_candidate_person_id = None
+            self._primary_candidate_frames = 0
+            return candidate
+        if candidate == previous:
+            self._primary_candidate_person_id = None
+            self._primary_candidate_frames = 0
+            return previous
+        if self._primary_candidate_person_id == candidate:
+            self._primary_candidate_frames += 1
+        else:
+            self._primary_candidate_person_id = candidate
+            self._primary_candidate_frames = 1
+        if self._primary_candidate_frames >= 3:
+            self._previous_primary_person_id = candidate
+            self._primary_candidate_person_id = None
+            self._primary_candidate_frames = 0
+            return candidate
+        return previous
 
     def set_bonuses(self, enabled: bool) -> bool:
         self.bonuses_enabled = enabled
@@ -658,9 +803,23 @@ class RuntimeCoordinator:
         )
 
 
-def _person_from_face(
-    face: FaceResult, estimator: EngagementEstimator, mono_ns: int
+def _person_from_track(
+    track: PersonTrack,
+    estimator: EngagementEstimator,
+    mono_ns: int,
+    *,
+    calibration: object | None = None,
 ) -> tuple[PersonState, SocialState]:
+    face = track.last_face
+    if face is None:
+        return (
+            PersonState(
+                person_id=track.person_id,
+                engagement_score=0.0,
+                engagement_confidence=0.0,
+            ),
+            SocialState.IDLE,
+        )
     signals = face_result_to_signals(
         face_confidence=face.face_confidence,
         yaw_degrees=face.yaw_degrees,
@@ -670,15 +829,28 @@ def _person_from_face(
         face_area_ratio=face.face_area_ratio,
         pose_source=face.pose_source,
         pose_quality=face.pose_quality,
+        calibration=calibration,
     )
     sample = estimator.sample(signals, mono_ns)
     return (
         PersonState(
-            person_id="person-1",
+            person_id=track.person_id,
             engagement_score=round(sample.smoothed_score, 2),
             engagement_confidence=signals.confidence,
         ),
         sample.state,
+    )
+
+
+def _calibration_snapshot(status: EngagementCalibrationStatus) -> EngagementCalibrationSnapshot:
+    return EngagementCalibrationSnapshot(
+        state=status.state,
+        person_id=status.person_id,
+        sample_count=status.sample_count,
+        quality=status.quality,
+        failure_reason=status.failure_reason,
+        mode=status.mode,
+        progress=status.progress,
     )
 
 

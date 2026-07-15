@@ -129,9 +129,11 @@ function App() {
         </section>
         <PerceptionPanel
           people={world?.people ?? []}
+          primaryPersonId={world?.primary_person_id ?? null}
           objects={world?.objects ?? []}
           health={world?.health ?? []}
           visionStatus={visionStatus}
+          engagementCalibration={world?.engagement_calibration ?? null}
         />
         <EvidenceTimeline evidence={state.evidence} />
         <DevicePanel

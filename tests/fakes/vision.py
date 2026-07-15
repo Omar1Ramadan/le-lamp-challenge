@@ -18,6 +18,7 @@ def make_face(
     gaze_score: float = 0.8,
     gaze_quality: float = 0.9,
     face_area_ratio: float = 0.12,
+    bbox: tuple[float, float, float, float] | None = None,
     pose_source: str = "mediapipe_matrix",
     pose_quality: float = 0.95,
 ) -> FaceResult:
@@ -28,6 +29,7 @@ def make_face(
         gaze_score=gaze_score,
         gaze_quality=gaze_quality,
         face_area_ratio=face_area_ratio,
+        bbox=bbox or (0.2, 0.2, 0.3, 0.3),
         pose_source=pose_source,
         roll_degrees=roll,
         pose_quality=pose_quality,

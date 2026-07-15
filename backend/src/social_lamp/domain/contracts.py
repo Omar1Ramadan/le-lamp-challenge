@@ -90,6 +90,16 @@ class PersonState(FrozenModel):
     is_active_speaker: bool = False
 
 
+class EngagementCalibrationSnapshot(FrozenModel):
+    state: str = "uncalibrated"
+    person_id: str | None = None
+    sample_count: int = Field(default=0, ge=0)
+    quality: str = "unavailable"
+    failure_reason: str | None = None
+    mode: str = "fallback"
+    progress: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class ObjectState(FrozenModel):
     track_id: str
     label: str
@@ -115,6 +125,9 @@ class WorldSnapshot(FrozenModel):
     audio_mode: AudioMode
     primary_person_id: str | None
     people: tuple[PersonState, ...]
+    engagement_calibration: EngagementCalibrationSnapshot = Field(
+        default_factory=EngagementCalibrationSnapshot
+    )
     objects: tuple[ObjectState, ...]
     health: tuple[ComponentHealth, ...]
 

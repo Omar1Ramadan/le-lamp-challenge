@@ -1,4 +1,9 @@
-import type { ComponentHealth, ObjectState, PersonState } from "../contracts/generated";
+import type {
+  ComponentHealth,
+  EngagementCalibrationSnapshot,
+  ObjectState,
+  PersonState,
+} from "../contracts/generated";
 import {
   shortDetectorName,
   badgeForStatus,
@@ -13,6 +18,8 @@ interface PerceptionPanelProps {
   objects: ObjectState[];
   health: ComponentHealth[];
   visionStatus?: VisionStatus | null;
+  primaryPersonId?: string | null;
+  engagementCalibration?: EngagementCalibrationSnapshot | null;
 }
 
 function StatusBadge({ status, detail }: { status: string; detail?: string | null }) {
@@ -49,7 +56,18 @@ function DetectorLine({
   );
 }
 
-export function PerceptionPanel({ people, objects, health, visionStatus }: PerceptionPanelProps) {
+async function postCalibration(path: string) {
+  await fetch(path, { method: "POST" });
+}
+
+export function PerceptionPanel({
+  people,
+  objects,
+  health,
+  visionStatus,
+  primaryPersonId,
+  engagementCalibration,
+}: PerceptionPanelProps) {
   const faceHealth = health.find((h) => h.component === "face_detector");
   const objectHealth = health.find((h) => h.component === "object_detector");
 
@@ -88,7 +106,18 @@ export function PerceptionPanel({ people, objects, health, visionStatus }: Perce
       ? "Possible person detection only — low reliability"
       : people.length === 0
         ? "0 people detected"
-        : `${people.length} person${people.length === 1 ? "" : "s"} tracked`;
+        : `${people.length} ${people.length === 1 ? "person" : "people"} tracked`;
+
+  const calibration = engagementCalibration ?? {
+    state: "uncalibrated",
+    person_id: null,
+    sample_count: 0,
+    quality: "unavailable",
+    failure_reason: null,
+    mode: "fallback",
+    progress: 0,
+  };
+  const calibrationProgress = Math.round(calibration.progress * 100);
 
   return (
     <section className="panel" aria-label="Perception state">
@@ -114,17 +143,46 @@ export function PerceptionPanel({ people, objects, health, visionStatus }: Perce
         {objectsSummary}
       </p>
 
+      <section className="perception-calibration" aria-label="Engagement calibration">
+        <h3>Engagement calibration</h3>
+        <p>Calibration: {calibration.state}</p>
+        <p>Mode: {calibration.mode}</p>
+        {calibration.state === "calibrating" ? <p>Progress: {calibrationProgress}%</p> : null}
+        {calibration.person_id ? <p>Calibrated: {calibration.person_id}</p> : null}
+        {calibration.failure_reason ? <p className="status-detail">{calibration.failure_reason}</p> : null}
+        {calibration.state === "calibrating" ? (
+          <button
+            type="button"
+            onClick={() => postCalibration("/api/calibration/engagement/cancel")}
+          >
+            Cancel calibration
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => postCalibration("/api/calibration/engagement/start")}
+          >
+            {calibration.state === "calibrated" ? "Recalibrate" : "Start calibration"}
+          </button>
+        )}
+      </section>
+
       {faceDetectorInfo?.detail && isDegraded(faceDetectorInfo.status) && (
         <p className="status-detail">{faceDetectorInfo.detail}</p>
       )}
 
       <ul>
-        {people.map((person) => (
-          <li key={person.person_id}>
-            {person.person_id} · engagement {Math.round(person.engagement_score * 100)}% ·
-            confidence {Math.round(person.engagement_confidence * 100)}%
-          </li>
-        ))}
+        {people.map((person) => {
+          const isPrimary = person.person_id === primaryPersonId;
+          const lowConfidence = person.engagement_confidence < 0.5;
+          return (
+            <li key={person.person_id} className={lowConfidence ? "person-low-confidence" : isPrimary ? "person-primary" : ""}>
+              {person.person_id}
+              {isPrimary ? <strong> (primary)</strong> : null} · engagement {Math.round(person.engagement_score * 100)}% ·
+              confidence {Math.round(person.engagement_confidence * 100)}%
+            </li>
+          );
+        })}
       </ul>
       <ul>
         {objects.map((object) => (

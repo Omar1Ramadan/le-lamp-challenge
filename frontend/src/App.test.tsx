@@ -169,6 +169,30 @@ describe("App backend integration", () => {
     await screen.findByText("I found keys from stored evidence.");
   });
 
+  it("renders multiple tracked people and the primary marker from socket snapshots", async () => {
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Load core journey replay" });
+    MockSocket.instances[0].emit({
+      seq: 1,
+      type: "world_snapshot",
+      body: {
+        ...world,
+        revision: 2,
+        social_state: "engaged",
+        primary_person_id: "person-2",
+        people: [
+          { person_id: "person-1", engagement_score: 0.42, engagement_confidence: 0.7 },
+          { person_id: "person-2", engagement_score: 0.88, engagement_confidence: 0.95 },
+        ],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByText(/2 people tracked/i)).toBeVisible());
+    expect(screen.getByText(/person-1/i)).toBeVisible();
+    expect(screen.getByText(/person-2/i)).toHaveTextContent(/primary/i);
+  });
+
   it("starts browser camera and microphone tools", async () => {
     render(<App />);
 

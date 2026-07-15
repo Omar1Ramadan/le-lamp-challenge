@@ -2,6 +2,30 @@ from hypothesis import given
 from hypothesis import strategies as st
 from social_lamp.domain.contracts import SocialState
 from social_lamp.perception.engagement import EngagementEstimator, EngagementSignals
+from social_lamp.perception.faces import FaceResult, face_result_to_signals
+
+
+def _calibration_face(
+    *,
+    confidence: float = 0.92,
+    yaw: float = 2.0,
+    pitch: float = 4.0,
+    roll: float = 1.0,
+    gaze: float = 0.75,
+    gaze_quality: float = 0.9,
+    area: float = 0.18,
+) -> FaceResult:
+    return FaceResult(
+        face_confidence=confidence,
+        yaw_degrees=yaw,
+        pitch_degrees=pitch,
+        roll_degrees=roll,
+        gaze_score=gaze,
+        gaze_quality=gaze_quality,
+        face_area_ratio=area,
+        pose_source="mediapipe_matrix",
+        pose_quality=0.95,
+    )
 
 
 def test_missing_gaze_renormalizes_available_signals() -> None:
@@ -79,3 +103,126 @@ def test_scores_stay_in_unit_range(
     )
     assert 0.0 <= sample.raw_score <= 1.0
     assert 0.0 <= sample.smoothed_score <= 1.0
+
+
+def test_calibration_starts_and_cancels() -> None:
+    estimator = EngagementEstimator()
+    status = estimator.start_calibration("person-1", mono_ns=100)
+    assert status.state == "calibrating"
+    assert status.person_id == "person-1"
+    assert status.sample_count == 0
+    assert status.progress == 0.0
+
+    cancelled = estimator.cancel_calibration()
+    assert cancelled.state == "uncalibrated"
+    assert cancelled.person_id is None
+    assert cancelled.mode == "fallback"
+
+
+def test_calibration_fails_without_enough_samples_after_window() -> None:
+    estimator = EngagementEstimator()
+    estimator.start_calibration("person-1", mono_ns=0)
+    estimator.observe_calibration(_calibration_face(), mono_ns=0)
+
+    status = estimator.calibration_status(mono_ns=3_000_000_000)
+    assert status.state == "failed"
+    assert status.sample_count == 1
+    assert status.quality == "failed"
+    assert status.failure_reason == "not enough valid samples"
+    assert status.mode == "fallback"
+
+
+def test_calibration_completes_with_median_baselines() -> None:
+    estimator = EngagementEstimator()
+    estimator.start_calibration("person-1", mono_ns=0)
+    for index in range(20):
+        estimator.observe_calibration(
+            _calibration_face(
+                yaw=10.0 if index == 19 else 2.0,
+                pitch=5.0,
+                roll=1.0,
+                area=0.18,
+                gaze=0.7,
+            ),
+            mono_ns=index * 100_000_000,
+        )
+
+    status = estimator.calibration_status(mono_ns=3_000_000_000)
+    assert status.state == "calibrated"
+    assert status.sample_count == 20
+    assert status.quality == "good"
+    assert status.mode == "calibrated"
+    assert estimator._calibration.neutral_yaw == 2.0
+    assert estimator._calibration.neutral_pitch == 5.0
+    assert estimator._calibration.neutral_face_scale == 0.18
+
+
+def test_calibration_ignores_low_confidence_samples() -> None:
+    estimator = EngagementEstimator()
+    estimator.start_calibration("person-1", mono_ns=0)
+    for index in range(25):
+        estimator.observe_calibration(
+            _calibration_face(confidence=0.2),
+            mono_ns=index * 100_000_000,
+        )
+
+    status = estimator.calibration_status(mono_ns=3_000_000_000)
+    assert status.state == "failed"
+    assert status.sample_count == 0
+    assert status.failure_reason == "not enough valid samples"
+
+
+def test_calibration_high_pose_variance_fails() -> None:
+    estimator = EngagementEstimator()
+    estimator.start_calibration("person-1", mono_ns=0)
+    for index in range(20):
+        yaw = -35.0 if index % 2 == 0 else 35.0
+        estimator.observe_calibration(
+            _calibration_face(yaw=yaw),
+            mono_ns=index * 100_000_000,
+        )
+
+    status = estimator.calibration_status(mono_ns=3_000_000_000)
+    assert status.state == "failed"
+    assert status.quality == "failed"
+    assert status.failure_reason == "pose moved too much"
+
+
+def _completed_calibrator() -> EngagementEstimator:
+    estimator = EngagementEstimator()
+    estimator.start_calibration("person-1", mono_ns=0)
+    for index in range(20):
+        estimator.observe_calibration(_calibration_face(yaw=20.0, pitch=8.0, area=0.2), index)
+    estimator.calibration_status(mono_ns=3_000_000_000)
+    return estimator
+
+
+def test_calibrated_head_pose_uses_neutral_offsets() -> None:
+    estimator = _completed_calibrator()
+    face = _calibration_face(yaw=20.0, pitch=8.0, area=0.2)
+    calibrated = face_result_to_signals(face, calibration=estimator._calibration)
+    fallback = face_result_to_signals(face)
+
+    assert calibrated.head_toward == 1.0
+    assert fallback.head_toward is not None
+    assert fallback.head_toward < 1.0
+    assert calibrated.confidence == 0.9900000000000001
+
+
+def test_calibrated_proximity_uses_neutral_face_scale() -> None:
+    estimator = _completed_calibrator()
+    face = _calibration_face(yaw=20.0, pitch=8.0, area=0.1)
+    signals = face_result_to_signals(face, calibration=estimator._calibration)
+
+    assert signals.proximity == 0.5
+
+
+def test_calibration_without_gaze_reports_partial_mode() -> None:
+    estimator = EngagementEstimator()
+    estimator.start_calibration("person-1", mono_ns=0)
+    for index in range(20):
+        estimator.observe_calibration(_calibration_face(gaze_quality=0.1), index)
+    status = estimator.calibration_status(mono_ns=3_000_000_000)
+
+    assert status.state == "calibrated"
+    assert status.mode == "partial"

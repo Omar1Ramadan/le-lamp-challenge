@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from social_lamp.capture.frames import CapturedFrame, LatestFrameBuffer
+from social_lamp.domain.clock import FakeClock
 from social_lamp.domain.contracts import ComponentHealth, ObjectState, PersonState
 from social_lamp.memory.repository import MemoryRepository
 from social_lamp.perception.faces import FaceResult
@@ -13,7 +14,14 @@ from social_lamp.runtime.coordinator import (
     RuntimeCoordinator,
     should_record_object_observation,
 )
-from social_lamp.runtime.testing import build_test_runtime
+from social_lamp.runtime.testing import (
+    FakeMetrics,
+    FakeSimulator,
+    MutableWorldModel,
+    TestMemory,
+    build_test_runtime,
+)
+from uuid6 import uuid7
 
 from tests.fakes.vision import (
     FailingFaceProcessor,
@@ -815,6 +823,55 @@ async def test_multi_face_processor_returns_multiple_faces(tmp_path: Path) -> No
     assert results[1].face_confidence == 0.85
 
 
+@pytest.mark.asyncio
+async def test_coordinator_processes_multiple_faces(tmp_path: Path) -> None:
+    coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
+    try:
+        face1 = make_face(confidence=0.9, bbox=(0.1, 0.1, 0.2, 0.3))
+        face2 = make_face(confidence=0.85, bbox=(0.6, 0.1, 0.2, 0.3), gaze_score=0.6)
+        for step in range(5):
+            await coordinator.process_vision_frame(
+                make_frame(mono_ns=step * 50_000_000),
+                face_processor=SequenceFaceProcessor([(face1, face2)]),
+                object_detector=TimedObjectDetector(()),
+                anchors={},
+            )
+
+        people = coordinator.world.snapshot.people
+        assert [person.person_id for person in people] == ["person-1", "person-2"]
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_primary_person_id_uses_highest_engagement_face(tmp_path: Path) -> None:
+    coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
+    try:
+        lower_engagement = make_face(
+            confidence=0.85,
+            gaze_score=0.45,
+            gaze_quality=0.9,
+            bbox=(0.1, 0.1, 0.2, 0.3),
+        )
+        higher_engagement = make_face(
+            confidence=0.95,
+            gaze_score=0.95,
+            gaze_quality=0.95,
+            bbox=(0.6, 0.1, 0.25, 0.35),
+        )
+        for step in range(5):
+            await coordinator.process_vision_frame(
+                make_frame(mono_ns=step * 50_000_000),
+                face_processor=SequenceFaceProcessor([(lower_engagement, higher_engagement)]),
+                object_detector=TimedObjectDetector(()),
+                anchors={},
+            )
+
+        assert coordinator.world.snapshot.primary_person_id == "person-2"
+    finally:
+        await coordinator.stop()
+
+
 # ---------------------------------------------------------------------------
 # Source conflict: stale camera result does not override newer browser frame
 # ---------------------------------------------------------------------------
@@ -897,3 +954,198 @@ def test_latest_frame_buffer_reports_stale_frames() -> None:
     assert buffer.health(now_mono_ns=20) == ComponentHealth(
         component="camera", status="degraded", detail="stale frame"
     )
+
+
+@pytest.mark.asyncio
+async def test_world_snapshot_includes_engagement_calibration_status(tmp_path: Path) -> None:
+    coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
+    try:
+        snapshot = coordinator.world.snapshot
+        assert snapshot.engagement_calibration.state == "uncalibrated"
+        assert snapshot.engagement_calibration.mode == "fallback"
+        assert snapshot.engagement_calibration.progress == 0.0
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_runtime_calibration_completes_from_vision_frames(tmp_path: Path) -> None:
+    coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
+    try:
+        coordinator.start_engagement_calibration(mono_ns=0)
+        face = FaceResult(
+            face_confidence=0.92,
+            yaw_degrees=12.0,
+            pitch_degrees=6.0,
+            roll_degrees=1.0,
+            gaze_score=0.7,
+            gaze_quality=0.9,
+            face_area_ratio=0.2,
+            pose_source="mediapipe_matrix",
+            pose_quality=0.95,
+        )
+        for index in range(31):
+            await coordinator.process_vision_frame(
+                CapturedFrame(
+                    np.zeros((4, 4, 3), dtype=np.uint8),
+                    mono_ns=index * 100_000_000,
+                ),
+                face_processor=FakeFaceProcessor((face,)),
+                object_detector=FakeObjectDetector(),
+                anchors={},
+            )
+
+        status = coordinator.engagement_calibration_status(mono_ns=3_000_000_000)
+        assert status.state == "calibrated"
+        assert coordinator.world.snapshot.engagement_calibration.state == "calibrated"
+        assert coordinator.world.snapshot.engagement_calibration.person_id == "person-1"
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_runtime_calibration_cancel_updates_snapshot(tmp_path: Path) -> None:
+    coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
+    try:
+        coordinator.start_engagement_calibration(mono_ns=0)
+        coordinator.cancel_engagement_calibration()
+        assert coordinator.world.snapshot.engagement_calibration.state == "uncalibrated"
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_object_detection_throttle_default_no_max_fps(tmp_path: Path) -> None:
+    clock = FakeClock(mono_ns=0, wall_time_utc="2026-07-04T12:00:00Z")
+    world = MutableWorldModel(session_id=uuid7(), clock=clock)
+    coordinator = RuntimeCoordinator(
+        world=world,
+        simulator=FakeSimulator(),
+        metrics=FakeMetrics(),
+        memory=TestMemory(tmp_path / "memory.db"),
+        object_detection_max_fps=0,
+    )
+    try:
+        bbox: BBox = (0.35, 0.35, 0.55, 0.65)
+        detection = Detection(label="keys", confidence=0.92, bbox=bbox, mono_ns=10)
+        callback_counts: list[int] = []
+
+        class CountingDetector:
+            def __init__(self) -> None:
+                self.call_count = 0
+
+            def detect(self, image: np.ndarray) -> tuple[Detection, ...]:
+                self.call_count += 1
+                callback_counts.append(self.call_count)
+                return (detection,)
+
+            def health(self) -> ComponentHealth:
+                return ComponentHealth(component="object_detector", status="active")
+
+        for step in range(5):
+            frame = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10 + step)
+            await coordinator.process_vision_frame(
+                frame,
+                face_processor=FakeFaceProcessor(),
+                object_detector=CountingDetector(),
+                anchors={"desk": (0.3, 0.3, 0.7, 0.8)},
+            )
+        assert len(callback_counts) == 5
+        assert coordinator._object_detection_skipped_frames == 0
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_object_detection_throttle_skips_inference(tmp_path: Path) -> None:
+    clock = FakeClock(mono_ns=0, wall_time_utc="2026-07-04T12:00:00Z")
+    world = MutableWorldModel(session_id=uuid7(), clock=clock)
+    coordinator = RuntimeCoordinator(
+        world=world,
+        simulator=FakeSimulator(),
+        metrics=FakeMetrics(),
+        memory=TestMemory(tmp_path / "memory.db"),
+        object_detection_max_fps=2,  # 500ms interval
+    )
+    try:
+        bbox: BBox = (0.35, 0.35, 0.55, 0.65)
+        detection = Detection(label="keys", confidence=0.92, bbox=bbox, mono_ns=10)
+        inference_times: list[int] = []
+
+        class TrackingDetector:
+            def detect(self, image: np.ndarray) -> tuple[Detection, ...]:
+                inference_times.append(image.sum())
+                del image
+                return (detection,)
+
+            def health(self) -> ComponentHealth:
+                return ComponentHealth(component="object_detector", status="active")
+
+        detector = TrackingDetector()
+        for step in range(5):
+            frame = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10 + step)
+            await coordinator.process_vision_frame(
+                frame,
+                face_processor=FakeFaceProcessor(),
+                object_detector=detector,
+                anchors={"desk": (0.3, 0.3, 0.7, 0.8)},
+            )
+        assert len(inference_times) == 1
+        assert coordinator._object_detection_skipped_frames == 4
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_object_detection_throttle_runs_when_interval_elapsed(
+    tmp_path: Path,
+) -> None:
+    clock = FakeClock(mono_ns=0, wall_time_utc="2026-07-04T12:00:00Z")
+    world = MutableWorldModel(session_id=uuid7(), clock=clock)
+    coordinator = RuntimeCoordinator(
+        world=world,
+        simulator=FakeSimulator(),
+        metrics=FakeMetrics(),
+        memory=TestMemory(tmp_path / "memory.db"),
+        object_detection_max_fps=2,  # 500ms interval
+    )
+    try:
+        bbox: BBox = (0.35, 0.35, 0.55, 0.65)
+        detection = Detection(label="keys", confidence=0.92, bbox=bbox, mono_ns=10)
+        inference_count = 0
+
+        class CountingDetector:
+            def detect(self, image: np.ndarray) -> tuple[Detection, ...]:
+                nonlocal inference_count
+                inference_count += 1
+                return (detection,)
+
+            def health(self) -> ComponentHealth:
+                return ComponentHealth(component="object_detector", status="active")
+
+        detector = CountingDetector()
+        # Frame at ns=10 - should trigger (first frame)
+        frame1 = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10)
+        await coordinator.process_vision_frame(
+            frame1, face_processor=FakeFaceProcessor(), object_detector=detector, anchors={},
+        )
+        assert inference_count == 1
+        assert coordinator._last_object_inference_mono_ns == 10
+
+        # Frame at ns=20 - skipped (< 500ms)
+        frame2 = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=20)
+        await coordinator.process_vision_frame(
+            frame2, face_processor=FakeFaceProcessor(), object_detector=detector, anchors={},
+        )
+        assert inference_count == 1
+        assert coordinator._object_detection_skipped_frames == 1
+
+        # Frame at ns=600_000_000 - should trigger (600ms > 500ms)
+        frame3 = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=600_000_000)
+        await coordinator.process_vision_frame(
+            frame3, face_processor=FakeFaceProcessor(), object_detector=detector, anchors={},
+        )
+        assert inference_count == 2
+        assert coordinator._last_object_inference_mono_ns == 600_000_000
+    finally:
+        await coordinator.stop()

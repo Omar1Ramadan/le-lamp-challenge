@@ -157,9 +157,19 @@ export interface PersonState {
   is_active_speaker?: IsActiveSpeaker;
   person_id: PersonId;
 }
+export interface EngagementCalibrationSnapshot {
+  failure_reason?: string | null;
+  mode: string;
+  person_id?: string | null;
+  progress: number;
+  quality: string;
+  sample_count: number;
+  state: string;
+}
 export interface WorldSnapshot {
   as_of_mono_ns: AsOfMonoNs;
   audio_mode: AudioMode;
+  engagement_calibration: EngagementCalibrationSnapshot;
   health: Health;
   objects: Objects;
   people: People;

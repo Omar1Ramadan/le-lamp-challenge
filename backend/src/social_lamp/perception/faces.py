@@ -43,6 +43,7 @@ class FaceResult:
     gaze_score: float
     gaze_quality: float
     face_area_ratio: float
+    bbox: tuple[float, float, float, float] = (0.0, 0.0, 0.1, 0.1)
     pose_source: str = "unavailable"
     roll_degrees: float = 0.0
     pose_quality: float = 0.0
@@ -219,30 +220,89 @@ def _box_proxy_pose(center_x: float, center_y: float) -> tuple[float, float]:
 
 
 def face_result_to_signals(
+    result: FaceResult | None = None,
     *,
-    face_confidence: float,
-    yaw_degrees: float,
-    pitch_degrees: float,
-    gaze_score: float,
-    gaze_quality: float,
-    face_area_ratio: float,
+    face_confidence: float | None = None,
+    yaw_degrees: float | None = None,
+    pitch_degrees: float | None = None,
+    gaze_score: float | None = None,
+    gaze_quality: float | None = None,
+    face_area_ratio: float | None = None,
     pose_source: str = "unavailable",
-    pose_quality: float = 0.0,
+    pose_quality: float | None = 0.0,
+    calibration: object | None = None,
 ) -> EngagementSignals:
+    if result is not None:
+        face_confidence = result.face_confidence
+        yaw_degrees = result.yaw_degrees
+        pitch_degrees = result.pitch_degrees
+        gaze_score = result.gaze_score
+        gaze_quality = result.gaze_quality
+        face_area_ratio = result.face_area_ratio
+        pose_source = result.pose_source
+        pose_quality = result.pose_quality
+    del pose_source
+
+    if (
+        face_confidence is None
+        or yaw_degrees is None
+        or pitch_degrees is None
+        or gaze_score is None
+        or gaze_quality is None
+        or face_area_ratio is None
+        or pose_quality is None
+    ):
+        raise ValueError("face_result_to_signals requires a FaceResult or complete signal fields")
+
+    def _calibrated_attr(name: str) -> float | None:
+        if calibration is None:
+            return None
+        value = getattr(calibration, name, None)
+        return float(value) if value is not None else None
+
+    neutral_yaw = _calibrated_attr("neutral_yaw")
+    neutral_pitch = _calibrated_attr("neutral_pitch")
+    neutral_face_scale = _calibrated_attr("neutral_face_scale")
+    gaze_baseline = _calibrated_attr("gaze_baseline")
+    is_calibrated = getattr(calibration, "state", None) == "calibrated"
+
     head: float | None
     if pose_quality < 0.5:
         head = None
+    elif is_calibrated and neutral_yaw is not None and neutral_pitch is not None:
+        head = _clamp(
+            1.0
+            - abs(yaw_degrees - neutral_yaw) / 30.0
+            - abs(pitch_degrees - neutral_pitch) / 25.0
+        )
     else:
         head = _clamp(1.0 - abs(yaw_degrees) / 45.0 - abs(pitch_degrees) / 40.0)
 
-    proximity = _clamp(face_area_ratio / 0.15)
-    gaze = _clamp(gaze_score) if gaze_quality >= 0.45 else None
+    if is_calibrated and neutral_face_scale is not None and neutral_face_scale > 0:
+        proximity = _clamp(face_area_ratio / neutral_face_scale)
+    else:
+        proximity = _clamp(face_area_ratio / 0.15)
+
+    if gaze_quality >= 0.45:
+        if is_calibrated and gaze_baseline is not None:
+            gaze = _clamp(0.5 + (gaze_score - gaze_baseline))
+        else:
+            gaze = _clamp(gaze_score)
+    else:
+        gaze = None
 
     base_conf = _clamp(face_confidence)
     if pose_quality < 0.5:
         confidence = min(base_conf, 0.35)
     else:
         confidence = min(base_conf, max(_clamp(gaze_quality), 0.45))
+    if (
+        is_calibrated
+        and neutral_yaw is not None
+        and neutral_pitch is not None
+        and neutral_face_scale is not None
+    ):
+        confidence = min(1.0, confidence * 1.1)
 
     return EngagementSignals(
         face_presence=_clamp(face_confidence),
@@ -265,7 +325,9 @@ class MediaPipeFaceAdapter:
 
 
 class MediaPipeFaceLandmarkerProcessor:
-    def __init__(self, *, model_path: Path = DEFAULT_FACE_LANDMARKER_MODEL) -> None:
+    def __init__(
+        self, *, model_path: Path = DEFAULT_FACE_LANDMARKER_MODEL, num_faces: int = 1
+    ) -> None:
         if not model_path.exists():
             raise RuntimeError(f"face landmarker unavailable: missing model {model_path}")
         try:
@@ -280,7 +342,7 @@ class MediaPipeFaceLandmarkerProcessor:
                 model_asset_path=str(model_path),
                 delegate=base_options.BaseOptions.Delegate.CPU,
             ),
-            num_faces=1,
+            num_faces=num_faces,
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
         )
@@ -373,6 +435,7 @@ class MediaPipeFaceLandmarkerProcessor:
                 gaze_score=gaze_score,
                 gaze_quality=gaze_quality,
                 face_area_ratio=min(width * height, 0.15),
+                bbox=(x_min, y_min, width, height),
                 pose_source=pose_source,
                 roll_degrees=roll_degrees,
                 pose_quality=pose_quality,
@@ -465,6 +528,12 @@ class OpenCvFaceProcessor:
                     gaze_score=attention_proxy,
                     gaze_quality=gaze_quality,
                     face_area_ratio=face_area_ratio,
+                    bbox=(
+                        float(x) / float(width),
+                        float(y) / float(height),
+                        float(w) / float(width),
+                        float(h) / float(height),
+                    ),
                     pose_source="box_proxy",
                     pose_quality=0.4,
                 )
@@ -686,6 +755,12 @@ class HeuristicFaceProcessor:
                 gaze_score=round(attention_proxy * 0.5, 3),
                 gaze_quality=0.35,
                 face_area_ratio=min(face_area_ratio, 0.15),
+                bbox=(
+                    float(x_min) / float(width),
+                    float(y_min) / float(height),
+                    float(face_width) / float(width),
+                    float(face_height) / float(height),
+                ),
                 pose_source="box_proxy",
                 pose_quality=0.4,
             ),
@@ -722,7 +797,9 @@ def build_face_detector(settings: Settings) -> tuple[object | None, FaceProcesso
 
     if mode == FaceDetectorMode.MEDIAPIPE:
         try:
-            processor = MediaPipeFaceLandmarkerProcessor()
+            processor = MediaPipeFaceLandmarkerProcessor(
+                num_faces=settings.face_detection_max_faces
+            )
             return (processor, processor.metadata)
         except RuntimeError:
             fallback = HeuristicFaceProcessor()
@@ -735,7 +812,9 @@ def build_face_detector(settings: Settings) -> tuple[object | None, FaceProcesso
 
     # auto: try mediapipe -> opencv -> heuristic
     try:
-        processor = MediaPipeFaceLandmarkerProcessor()
+        processor = MediaPipeFaceLandmarkerProcessor(
+            num_faces=settings.face_detection_max_faces
+        )
         return (processor, processor.metadata)
     except RuntimeError:
         pass

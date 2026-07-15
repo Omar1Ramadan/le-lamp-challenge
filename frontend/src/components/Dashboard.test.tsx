@@ -120,4 +120,47 @@ describe("PerceptionPanel", () => {
     expect(screen.getByText(/1 person tracked/i)).toBeVisible();
     expect(screen.getByText(/1 object tracked/i)).toBeVisible();
   });
+
+  it("renders multiple people and marks the primary person", () => {
+    render(
+      <PerceptionPanel
+        people={[
+          { person_id: "person-1", engagement_score: 0.8, engagement_confidence: 0.9, is_active_speaker: false },
+          { person_id: "person-2", engagement_score: 0.6, engagement_confidence: 0.7, is_active_speaker: false },
+        ]}
+        primaryPersonId="person-1"
+        objects={[]}
+        health={[
+          { component: "face_detector", status: "active", detail: "mediapipe_face_landmarker" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/2 people tracked/i)).toBeVisible();
+    expect(screen.getByText(/person-1/i)).toHaveTextContent(/primary/i);
+    expect(screen.getByText(/person-2/i)).not.toHaveTextContent(/primary/i);
+  });
+
+  it("shows engagement calibration state and controls", () => {
+    render(
+      <PerceptionPanel
+        people={[]}
+        objects={[]}
+        health={[]}
+        engagementCalibration={{
+          state: "uncalibrated",
+          person_id: null,
+          sample_count: 0,
+          quality: "unavailable",
+          failure_reason: null,
+          mode: "fallback",
+          progress: 0,
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/calibration: uncalibrated/i)).toBeVisible();
+    expect(screen.getByText(/mode: fallback/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /start calibration/i })).toBeVisible();
+  });
 });
