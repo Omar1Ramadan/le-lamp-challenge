@@ -1,7 +1,9 @@
 from collections import Counter, OrderedDict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Protocol
+from pathlib import Path
+from time import monotonic_ns
+from typing import Any, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -72,6 +74,76 @@ class FastObjectDetector:
             component="object_detector",
             status="active",
         )
+
+
+class YoloObjectDetector:
+    def __init__(
+        self,
+        model_path: str | Path = "yolov8n.pt",
+        confidence: float = 0.45,
+        classes: list[int] | None = None,
+    ) -> None:
+        self._model_path = str(model_path)
+        self._confidence = confidence
+        self._classes = classes
+        self._model: Any = None
+        self._load_error: str | None = None
+        self._load_model()
+
+    def _load_model(self) -> None:
+        try:
+            from ultralytics import YOLO
+
+            self._model = YOLO(self._model_path)
+        except Exception as exc:
+            self._load_error = f"Object detection model load failed: {exc}"
+            self._model = None
+
+    def health(self) -> ComponentHealth:
+        if self._load_error is not None:
+            return ComponentHealth(
+                component="object_detector",
+                status="degraded",
+                detail=self._load_error,
+            )
+        return ComponentHealth(
+            component="object_detector",
+            status="active",
+        )
+
+    def detect(self, image: NDArray[np.uint8]) -> tuple[Detection, ...]:
+        if self._model is None:
+            return ()
+        try:
+            results = self._model(
+                image,
+                conf=self._confidence,
+                classes=self._classes,
+                verbose=False,
+            )
+            now = monotonic_ns()
+            detections: list[Detection] = []
+            for result in results:
+                if result.boxes is None:
+                    continue
+                for box, conf, cls_id in zip(
+                    result.boxes.xyxyn,
+                    result.boxes.conf,
+                    result.boxes.cls,
+                ):
+                    x1, y1, x2, y2 = box.tolist()
+                    label = result.names[int(cls_id)]
+                    detections.append(
+                        Detection(
+                            label=label,
+                            confidence=float(conf),
+                            bbox=(x1, y1, x2, y2),
+                            mono_ns=now,
+                        )
+                    )
+            return tuple(detections)
+        except Exception:
+            return ()
 
 
 class EnrichmentQueue:

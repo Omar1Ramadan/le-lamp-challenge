@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import numpy as np
 from social_lamp.config import Settings
 from social_lamp.domain.contracts import ComponentHealth
-from social_lamp.perception.objects import FastObjectDetector, NullObjectDetector
+from social_lamp.perception.objects import FastObjectDetector, NullObjectDetector, YoloObjectDetector
 
 
 class _FakeModel:
@@ -31,6 +33,23 @@ def test_active_detector_returns_empty_on_no_objects() -> None:
     image = np.zeros((100, 100, 3), dtype=np.uint8)
     detections = detector.detect(image)
     assert detections == ()
+
+
+def _fake_model_path() -> Path:
+    return Path("/tmp/__not_a_real_model.pt")
+
+
+def test_yolo_detector_reports_degraded_when_model_missing() -> None:
+    detector = YoloObjectDetector(model_path=_fake_model_path(), confidence=0.45)
+    health = detector.health()
+    assert health.status == "degraded"
+
+
+def test_yolo_detector_does_not_crash_on_empty_image() -> None:
+    detector = YoloObjectDetector(model_path=_fake_model_path(), confidence=0.45)
+    image = np.zeros((100, 100, 3), dtype=np.uint8)
+    detections = detector.detect(image)
+    assert isinstance(detections, tuple)
 
 
 def test_object_detection_settings_default_to_disabled() -> None:
