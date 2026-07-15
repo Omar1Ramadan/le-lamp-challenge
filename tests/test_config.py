@@ -21,3 +21,28 @@ def test_mediapipe_face_landmarker_defaults_off() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.enable_mediapipe_face_landmarker is False
+
+
+def test_face_detector_mode_defaults_to_auto() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.face_detector_mode == "auto"
+
+
+def test_legacy_mediapipe_env_var_sets_mode_to_mediapipe() -> None:
+    settings = Settings(_env_file=None, enable_mediapipe_face_landmarker=True)
+    assert settings.face_detector_mode == "mediapipe"
+
+
+def test_explicit_face_detector_mode_takes_priority_over_legacy() -> None:
+    settings = Settings(
+        _env_file=None,
+        enable_mediapipe_face_landmarker=True,
+        face_detector_mode="opencv",
+    )
+    assert settings.face_detector_mode == "opencv"
+
+
+def test_all_face_detector_modes_are_accepted() -> None:
+    for mode in ("auto", "mediapipe", "opencv", "heuristic", "disabled"):
+        settings = Settings(_env_file=None, face_detector_mode=mode)
+        assert settings.face_detector_mode == mode

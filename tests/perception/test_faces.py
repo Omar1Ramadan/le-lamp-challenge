@@ -1,8 +1,13 @@
 import numpy as np
 from social_lamp.capture.frames import CapturedFrame
+from social_lamp.config import Settings
 from social_lamp.perception.faces import (
+    FaceDetectorMode,
+    FaceProcessorMetadata,
     HeuristicFaceProcessor,
     MediaPipeFaceAdapter,
+    OpenCvFaceProcessor,
+    build_face_detector,
     face_result_to_signals,
 )
 
@@ -66,6 +71,37 @@ def test_heuristic_face_processor_detects_person_like_center() -> None:
 
     assert len(faces) == 1
     assert faces[0].gaze_score > 0.75
+
+
+def test_build_face_detector_disabled_returns_none() -> None:
+    settings = Settings(_env_file=None, face_detector_mode="disabled")
+    processor, metadata = build_face_detector(settings)
+    assert processor is None
+    assert metadata.status == "disabled"
+
+
+def test_build_face_detector_heuristic_returns_heuristic() -> None:
+    settings = Settings(_env_file=None, face_detector_mode="heuristic")
+    processor, metadata = build_face_detector(settings)
+    assert isinstance(processor, HeuristicFaceProcessor)
+    assert metadata.name == "heuristic_skin_region"
+    assert metadata.status == "active"
+
+
+def test_build_face_detector_opencv_returns_opencv() -> None:
+    settings = Settings(_env_file=None, face_detector_mode="opencv")
+    processor, metadata = build_face_detector(settings)
+    assert isinstance(processor, OpenCvFaceProcessor)
+    assert metadata.name == "opencv_haar"
+    assert metadata.status == "active"
+
+
+def test_build_face_detector_metadata_matches_processor() -> None:
+    settings = Settings(_env_file=None, face_detector_mode="heuristic")
+    _, metadata = build_face_detector(settings)
+    assert metadata.name == "heuristic_skin_region"
+    assert metadata.status == "active"
+    assert metadata.detail is not None
 
 
 def test_heuristic_face_processor_lowers_attention_when_off_center() -> None:

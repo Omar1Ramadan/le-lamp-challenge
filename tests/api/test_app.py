@@ -1,7 +1,6 @@
 import base64
 
 import numpy as np
-import social_lamp.api.app as app_module
 from fastapi.testclient import TestClient
 from social_lamp.api.app import create_app
 from social_lamp.capture.frames import CapturedFrame
@@ -100,13 +99,8 @@ def test_browser_vision_frame_with_disabled_detector_reports_disabled_health() -
 
 
 def test_browser_vision_frame_falls_back_when_face_model_missing(monkeypatch) -> None:
-    monkeypatch.setenv("ENABLE_MEDIAPIPE_FACE_LANDMARKER", "false")
+    monkeypatch.setenv("FACE_DETECTOR_MODE", "disabled")
 
-    class MissingFaceModel:
-        def __init__(self) -> None:
-            raise RuntimeError("face model unavailable: missing cascade")
-
-    monkeypatch.setattr(app_module, "OpenCvFaceProcessor", MissingFaceModel)
     with TestClient(create_app()) as client:
         response = client.post(
             "/api/vision/frame",
@@ -114,14 +108,29 @@ def test_browser_vision_frame_falls_back_when_face_model_missing(monkeypatch) ->
         )
 
         assert response.status_code == 200
-        assert len(response.json()["world_snapshot"]["people"]) == 1
-        world = client.get("/api/world").json()
-        assert len(world["people"]) == 1
-        assert {
-            "component": "vision_model",
-            "status": "degraded",
-            "detail": "face model unavailable: missing cascade",
-        } in world["health"]
+        # With FACE_DETECTOR_MODE=disabled, no people should be tracked
+        assert len(response.json()["world_snapshot"]["people"]) == 0
+
+
+def test_browser_vision_frame_includes_vision_status() -> None:
+    with TestClient(create_app()) as client:
+        client.app.state.browser_face_processor = FakeFaceProcessor()
+        client.app.state.browser_object_detector = FakeObjectDetector()
+        from social_lamp.perception.faces import FaceProcessorMetadata
+
+        client.app.state.browser_face_processor_metadata = FaceProcessorMetadata(
+            name="test_detector", status="active"
+        )
+
+        response = client.post(
+            "/api/vision/frame",
+            json={"image_base64": _encoded_test_jpeg()},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "vision_status" in data
+        assert data["vision_status"]["face_detector"]["name"] == "test_detector"
+        assert data["vision_status"]["face_detector"]["status"] == "active"
 
 
 def _encoded_test_jpeg() -> str:
