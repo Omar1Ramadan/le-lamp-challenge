@@ -132,6 +132,89 @@ async def test_live_frame_clears_people_when_face_leaves_frame(tmp_path: Path) -
         await coordinator.stop()
 
 
+@pytest.mark.asyncio
+async def test_disabled_detector_reports_disabled_health(tmp_path: Path) -> None:
+    coordinator = build_test_runtime(tmp_path / "unused.db")
+    try:
+        frame = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10)
+        await coordinator.process_vision_frame(
+            frame,
+            face_processor=FakeFaceProcessor(),
+            object_detector=FakeObjectDetector(),
+            anchors={},
+        )
+        assert any(
+            h.component == "object_detector" and h.status == "disabled"
+            for h in coordinator.world.snapshot.health
+        )
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_degraded_detector_sets_degraded_health(tmp_path: Path) -> None:
+    coordinator = build_test_runtime(tmp_path / "unused.db")
+
+    class DegradedDetector:
+        def detect(self, image: np.ndarray) -> tuple[Detection, ...]:
+            del image
+            return ()
+
+        def health(self) -> ComponentHealth:
+            return ComponentHealth(
+                component="object_detector",
+                status="degraded",
+                detail="object model crashed",
+            )
+
+    frame = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10)
+    await coordinator.process_vision_frame(
+        frame,
+        face_processor=FakeFaceProcessor(),
+        object_detector=DegradedDetector(),
+        anchors={},
+    )
+    assert any(
+        h.component == "object_detector" and h.status == "degraded"
+        for h in coordinator.world.snapshot.health
+    )
+
+
+@pytest.mark.asyncio
+async def test_active_detector_with_objects_updates_world(tmp_path: Path) -> None:
+    coordinator = build_test_runtime(tmp_path / "unused.db")
+
+    class ActiveDetector:
+        def __init__(self) -> None:
+            self._call_count = 0
+
+        def detect(self, image: np.ndarray) -> tuple[Detection, ...]:
+            self._call_count += 1
+            bbox: BBox = (0.1, 0.1, 0.5, 0.5)
+            return (Detection(label="bottle", confidence=0.9, bbox=bbox, mono_ns=10 + self._call_count),)
+
+        def health(self) -> ComponentHealth:
+            return ComponentHealth(component="object_detector", status="active")
+
+    try:
+        for step in range(5):
+            frame = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=10 + step)
+            await coordinator.process_vision_frame(
+                frame,
+                face_processor=FakeFaceProcessor(),
+                object_detector=ActiveDetector(),
+                anchors={"desk": (0.0, 0.0, 1.0, 1.0)},
+            )
+        snapshot = coordinator.world.snapshot
+        assert any(obj.label == "bottle" for obj in snapshot.objects)
+        assert any(
+            h.component == "object_detector" and h.status == "active"
+            for h in snapshot.health
+        )
+    finally:
+        await coordinator.stop()
+
+
 def test_latest_frame_buffer_reports_stale_frames() -> None:
     buffer = LatestFrameBuffer(capacity=1, max_age_ns=5)
     buffer.put(np.zeros((2, 2, 3), dtype=np.uint8), mono_ns=10)

@@ -83,7 +83,26 @@ def test_browser_vision_frame_rejects_invalid_image() -> None:
         assert response.status_code == 400
 
 
+def test_browser_vision_frame_with_disabled_detector_reports_disabled_health() -> None:
+    with TestClient(create_app()) as client:
+        client.app.state.browser_face_processor = FakeFaceProcessor()
+        client.app.state.browser_object_detector = FakeObjectDetector()
+
+        response = client.post(
+            "/api/vision/frame",
+            json={"image_base64": _encoded_test_jpeg()},
+        )
+        assert response.status_code == 200
+        health = response.json()["world_snapshot"]["health"]
+        assert any(
+            h["component"] == "object_detector" and h["status"] == "disabled"
+            for h in health
+        )
+
+
 def test_browser_vision_frame_falls_back_when_face_model_missing(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_MEDIAPIPE_FACE_LANDMARKER", "false")
+
     class MissingFaceModel:
         def __init__(self) -> None:
             raise RuntimeError("face model unavailable: missing cascade")
