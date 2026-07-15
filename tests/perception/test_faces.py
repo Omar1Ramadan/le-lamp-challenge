@@ -2,8 +2,6 @@ import numpy as np
 from social_lamp.capture.frames import CapturedFrame
 from social_lamp.config import Settings
 from social_lamp.perception.faces import (
-    FaceDetectorMode,
-    FaceProcessorMetadata,
     HeuristicFaceProcessor,
     MediaPipeFaceAdapter,
     OpenCvFaceProcessor,
