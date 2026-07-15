@@ -2,8 +2,11 @@ from pathlib import Path
 
 import numpy as np
 from social_lamp.config import Settings
-from social_lamp.domain.contracts import ComponentHealth
-from social_lamp.perception.objects import FastObjectDetector, NullObjectDetector, YoloObjectDetector
+from social_lamp.perception.objects import (
+    FastObjectDetector,
+    NullObjectDetector,
+    YoloObjectDetector,
+)
 
 
 class _FakeModel:

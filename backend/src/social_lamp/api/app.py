@@ -20,8 +20,8 @@ from social_lamp.perception.faces import (
     MediaPipeFaceLandmarkerProcessor,
     OpenCvFaceProcessor,
 )
-from social_lamp.runtime.coordinator import RuntimeCoordinator
 from social_lamp.perception.objects import NullObjectDetector, YoloObjectDetector
+from social_lamp.runtime.coordinator import RuntimeCoordinator
 from social_lamp.runtime.live import build_live_runtime
 
 

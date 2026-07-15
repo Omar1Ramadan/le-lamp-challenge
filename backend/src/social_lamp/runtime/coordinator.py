@@ -513,6 +513,11 @@ class RuntimeCoordinator:
                 )
                 self._recorded_stable_tracks.add(track.track_id)
 
+        detector_health = (
+            object_detector.health()
+            if hasattr(object_detector, "health")
+            else ComponentHealth(component="object_detector", status="disabled")
+        )
         current = snapshot.model_copy(
             update={
                 "snapshot_id": uuid7(),
@@ -527,9 +532,7 @@ class RuntimeCoordinator:
                         snapshot.health,
                         ComponentHealth(component="vision", status="ok"),
                     ),
-                    object_detector.health() if hasattr(object_detector, "health") else ComponentHealth(
-                        component="object_detector", status="disabled"
-                    ),
+                    detector_health,
                 ),
             }
         )

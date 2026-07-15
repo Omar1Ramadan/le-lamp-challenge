@@ -130,6 +130,7 @@ class YoloObjectDetector:
                     result.boxes.xyxyn,
                     result.boxes.conf,
                     result.boxes.cls,
+                    strict=False,
                 ):
                     x1, y1, x2, y2 = box.tolist()
                     label = result.names[int(cls_id)]

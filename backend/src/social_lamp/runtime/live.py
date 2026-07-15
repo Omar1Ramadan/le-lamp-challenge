@@ -16,7 +16,7 @@ from social_lamp.domain.contracts import ComponentHealth
 from social_lamp.memory.repository import MemoryRepository
 from social_lamp.perception.faces import MediaPipeFaceLandmarkerProcessor, OpenCvFaceProcessor
 from social_lamp.perception.location import BBox
-from social_lamp.perception.objects import Detection, NullObjectDetector, YoloObjectDetector
+from social_lamp.perception.objects import NullObjectDetector, YoloObjectDetector
 from social_lamp.runtime.coordinator import RuntimeCoordinator
 from social_lamp.runtime.providers import build_conversation_provider
 from social_lamp.world.model import WorldModel
