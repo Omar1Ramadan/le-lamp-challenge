@@ -9,6 +9,8 @@ type DeviceStatus = "idle" | "starting" | "live" | "error";
 interface VisionDebug {
   attention_proxy: number;
   box: { height: number; width: number; x: number; y: number };
+  eyes?: { height: number; width: number; x: number; y: number }[];
+  gaze_source?: string;
   target: { x: number; y: number };
 }
 
@@ -184,12 +186,28 @@ function VisionOverlay({ debug }: { debug: VisionDebug | null }) {
     left: `${debug.target.x * 100}%`,
     top: `${debug.target.y * 100}%`,
   };
+  const eyes = Array.isArray(debug.eyes) ? debug.eyes : [];
 
   return (
     <div className="vision-overlay" aria-label="Backend vision pose overlay">
       <div className="vision-box" style={boxStyle} />
+      {eyes.map((eye, index) => (
+        <div
+          className="vision-eye"
+          key={`${eye.x}-${eye.y}-${index}`}
+          style={{
+            height: `${eye.height * debug.box.height * 100}%`,
+            left: `${(debug.box.x + eye.x * debug.box.width) * 100}%`,
+            top: `${(debug.box.y + eye.y * debug.box.height) * 100}%`,
+            width: `${eye.width * debug.box.width * 100}%`,
+          }}
+        />
+      ))}
       <div className="vision-target" style={targetStyle} />
-      <span className="vision-label">attention {Math.round(debug.attention_proxy * 100)}%</span>
+      <span className="vision-label">
+        {debug.gaze_source ?? "backend pose"} · attention{" "}
+        {Math.round(debug.attention_proxy * 100)}%
+      </span>
     </div>
   );
 }

@@ -9,6 +9,9 @@ from social_lamp.capture.frames import CapturedFrame
 from social_lamp.perception.engagement import EngagementSignals
 
 MAX_FRAME_AGE_NS = 300_000_000
+DEFAULT_FACE_LANDMARKER_MODEL = (
+    Path(__file__).resolve().parents[3] / "assets" / "mediapipe" / "face_landmarker.task"
+)
 
 
 @dataclass(frozen=True)
@@ -33,8 +36,81 @@ def _opencv_attention_proxy(
     *, horizontal_offset: float, vertical_offset: float, eye_count: int
 ) -> float:
     centeredness = _clamp(1.0 - horizontal_offset / 0.35 - vertical_offset / 0.45)
-    eye_bonus = 0.2 if eye_count >= 2 else 0.0
+    eye_bonus = 0.2 if eye_count >= 2 else -0.25
     return _clamp(0.15 + 0.75 * centeredness + eye_bonus)
+
+
+def _opencv_eye_attention(
+    eyes: tuple[tuple[int, int, int, int], ...], *, face_width: int, face_height: int
+) -> tuple[float, tuple[tuple[float, float, float, float], ...]]:
+    if not eyes or face_width <= 0 or face_height <= 0:
+        return 0.2, ()
+
+    normalized = tuple(
+        (
+            float(ex) / float(face_width),
+            float(ey) / float(face_height),
+            float(ew) / float(face_width),
+            float(eh) / float(face_height),
+        )
+        for ex, ey, ew, eh in eyes
+    )
+    eye_centers = sorted(
+        (
+            (x + width / 2.0, y + height / 2.0)
+            for x, y, width, height in normalized
+            if 0.12 <= y + height / 2.0 <= 0.58
+        ),
+        key=lambda center: center[0],
+    )
+    if len(eye_centers) < 2:
+        return 0.42, normalized
+
+    left, right = eye_centers[0], eye_centers[-1]
+    separation = right[0] - left[0]
+    average_y = (left[1] + right[1]) / 2.0
+    vertical_delta = abs(left[1] - right[1])
+    separation_score = _clamp(1.0 - abs(separation - 0.36) / 0.28)
+    height_score = _clamp(1.0 - abs(average_y - 0.32) / 0.22)
+    level_score = _clamp(1.0 - vertical_delta / 0.16)
+    attention = _clamp(
+        0.15 + 0.35 * separation_score + 0.3 * height_score + 0.2 * level_score
+    )
+    return attention, normalized
+
+
+def _blendshape_gaze(blendshapes: object) -> tuple[float, float, dict[str, object]]:
+    scores: dict[str, float] = {}
+    for category in blendshapes or ():
+        name = getattr(category, "category_name", "")
+        score = getattr(category, "score", 0.0)
+        if isinstance(name, str) and isinstance(score, float | int):
+            scores[name] = float(score)
+
+    look_names = (
+        "eyeLookDownLeft",
+        "eyeLookDownRight",
+        "eyeLookInLeft",
+        "eyeLookInRight",
+        "eyeLookOutLeft",
+        "eyeLookOutRight",
+        "eyeLookUpLeft",
+        "eyeLookUpRight",
+    )
+    blink_names = ("eyeBlinkLeft", "eyeBlinkRight")
+    look_away = max((scores.get(name, 0.0) for name in look_names), default=0.0)
+    blink = max((scores.get(name, 0.0) for name in blink_names), default=0.0)
+    if not scores:
+        return 0.5, 0.55, {"eye_look_away": None, "eye_blink": None}
+    gaze_score = _clamp(1.0 - 1.45 * look_away - 0.75 * blink)
+    return (
+        gaze_score,
+        0.9,
+        {
+            "eye_blink": round(blink, 3),
+            "eye_look_away": round(look_away, 3),
+        },
+    )
 
 
 def face_result_to_signals(
@@ -67,6 +143,91 @@ class MediaPipeFaceAdapter:
         if now_mono_ns - frame.mono_ns > MAX_FRAME_AGE_NS:
             return ()
         return tuple(self._landmarker.detect(frame.image))
+
+
+class MediaPipeFaceLandmarkerProcessor:
+    def __init__(self, *, model_path: Path = DEFAULT_FACE_LANDMARKER_MODEL) -> None:
+        if not model_path.exists():
+            raise RuntimeError(f"face landmarker unavailable: missing model {model_path}")
+        try:
+            import mediapipe as mp
+            from mediapipe.tasks.python.core import base_options
+            from mediapipe.tasks.python.vision import face_landmarker
+        except Exception as exc:
+            raise RuntimeError(f"face landmarker unavailable: {exc.__class__.__name__}") from exc
+
+        options = face_landmarker.FaceLandmarkerOptions(
+            base_options=base_options.BaseOptions(
+                model_asset_path=str(model_path),
+                delegate=base_options.BaseOptions.Delegate.CPU,
+            ),
+            num_faces=1,
+            output_face_blendshapes=True,
+            output_facial_transformation_matrixes=True,
+        )
+        self._mp = mp
+        self._landmarker = face_landmarker.FaceLandmarker.create_from_options(options)
+        self.last_debug: dict[str, object] | None = None
+
+    def process(self, frame: CapturedFrame, *, now_mono_ns: int) -> tuple[FaceResult, ...]:
+        self.last_debug = None
+        if now_mono_ns - frame.mono_ns > MAX_FRAME_AGE_NS:
+            return ()
+
+        rgb = frame.image[:, :, ::-1].copy()
+        image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
+        result = self._landmarker.detect(image)
+        if not result.face_landmarks:
+            return ()
+
+        landmarks = result.face_landmarks[0]
+        xs = [float(landmark.x) for landmark in landmarks]
+        ys = [float(landmark.y) for landmark in landmarks]
+        x_min = _clamp(min(xs))
+        x_max = _clamp(max(xs))
+        y_min = _clamp(min(ys))
+        y_max = _clamp(max(ys))
+        width = max(x_max - x_min, 0.001)
+        height = max(y_max - y_min, 0.001)
+        center_x = x_min + width / 2.0
+        center_y = y_min + height / 2.0
+        horizontal_offset = abs(center_x - 0.5)
+        vertical_offset = abs(center_y - 0.45)
+        yaw_degrees = min(45.0, horizontal_offset * 120.0)
+        pitch_degrees = min(40.0, vertical_offset * 100.0)
+
+        blendshapes = result.face_blendshapes[0] if result.face_blendshapes else ()
+        gaze_score, gaze_quality, gaze_detail = _blendshape_gaze(blendshapes)
+        if gaze_quality < 0.85:
+            gaze_score = min(
+                gaze_score,
+                _opencv_attention_proxy(
+                    horizontal_offset=horizontal_offset,
+                    vertical_offset=vertical_offset,
+                    eye_count=2,
+                ),
+            )
+
+        self.last_debug = {
+            "attention_proxy": round(gaze_score, 3),
+            "box": {"x": x_min, "y": y_min, "width": width, "height": height},
+            "gaze_source": "mediapipe_blendshapes",
+            "landmark_count": len(landmarks),
+            "target": {"x": center_x, "y": center_y},
+            "yaw_degrees": round(yaw_degrees, 1),
+            "pitch_degrees": round(pitch_degrees, 1),
+            **gaze_detail,
+        }
+        return (
+            FaceResult(
+                face_confidence=0.92,
+                yaw_degrees=yaw_degrees,
+                pitch_degrees=pitch_degrees,
+                gaze_score=gaze_score,
+                gaze_quality=gaze_quality,
+                face_area_ratio=min(width * height, 0.15),
+            ),
+        )
 
 
 class OpenCvFaceProcessor:
@@ -113,12 +274,16 @@ class OpenCvFaceProcessor:
             yaw_degrees = min(45.0, horizontal_offset * 120.0)
             pitch_degrees = min(40.0, vertical_offset * 100.0)
             eyes = self._detect_eyes(grayscale, int(x), int(y), int(w), int(h))
-            attention_proxy = _opencv_attention_proxy(
+            head_attention = _opencv_attention_proxy(
                 horizontal_offset=horizontal_offset,
                 vertical_offset=vertical_offset,
                 eye_count=len(eyes),
             )
-            gaze_quality = 0.75 if len(eyes) >= 2 else 0.45
+            eye_attention, normalized_eyes = _opencv_eye_attention(
+                eyes, face_width=int(w), face_height=int(h)
+            )
+            attention_proxy = _clamp(0.5 * head_attention + 0.5 * eye_attention)
+            gaze_quality = 0.82 if len(normalized_eyes) >= 2 else 0.42
             face_area_ratio = (w * h) / frame_area
             if index == 0:
                 self.last_debug = {
@@ -129,7 +294,12 @@ class OpenCvFaceProcessor:
                         "width": float(w) / float(width),
                         "height": float(h) / float(height),
                     },
+                    "eyes": [
+                        {"x": ex, "y": ey, "width": ew, "height": eh}
+                        for ex, ey, ew, eh in normalized_eyes
+                    ],
                     "eye_count": len(eyes),
+                    "gaze_source": "opencv_eye_geometry",
                     "target": {"x": center_x, "y": center_y},
                     "yaw_degrees": round(yaw_degrees, 1),
                     "pitch_degrees": round(pitch_degrees, 1),

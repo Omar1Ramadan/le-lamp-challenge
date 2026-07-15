@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     retention_days: int = Field(default=30, validation_alias="RETENTION_DAYS")
     enable_audio_bonus: bool = Field(default=False, validation_alias="ENABLE_AUDIO_BONUS")
     enable_live_capture: bool = Field(default=False, validation_alias="ENABLE_LIVE_CAPTURE")
+    enable_mediapipe_face_landmarker: bool = Field(
+        default=False, validation_alias="ENABLE_MEDIAPIPE_FACE_LANDMARKER"
+    )
     enable_cloud_conversation: bool = Field(
         default=False, validation_alias="ENABLE_CLOUD_CONVERSATION"
     )

@@ -14,7 +14,7 @@ from social_lamp.conversation.base import ConversationProvider
 from social_lamp.domain.clock import SystemClock
 from social_lamp.domain.contracts import ComponentHealth
 from social_lamp.memory.repository import MemoryRepository
-from social_lamp.perception.faces import OpenCvFaceProcessor
+from social_lamp.perception.faces import MediaPipeFaceLandmarkerProcessor, OpenCvFaceProcessor
 from social_lamp.perception.location import BBox
 from social_lamp.perception.objects import Detection
 from social_lamp.runtime.coordinator import RuntimeCoordinator
@@ -68,19 +68,33 @@ async def build_live_runtime(
         object_detector = NullObjectDetector()
         audio_source = SoundDeviceMicrophoneStream()
         audio_classifier = SimpleVadClassifier()
-        try:
-            face_processor = OpenCvFaceProcessor()
-        except RuntimeError as exc:
-            world.replace(
-                world.snapshot.model_copy(
-                    update={
-                        "revision": world.snapshot.revision + 1,
-                        "health": (
-                            ComponentHealth(component="vision", status="degraded", detail=str(exc)),
-                        ),
-                    }
+        landmark_exc: RuntimeError | None = None
+        if resolved_settings.enable_mediapipe_face_landmarker:
+            try:
+                face_processor = MediaPipeFaceLandmarkerProcessor()
+            except RuntimeError as exc:
+                landmark_exc = exc
+        if face_processor is None:
+            try:
+                face_processor = OpenCvFaceProcessor()
+            except RuntimeError as fallback_exc:
+                detail = str(fallback_exc)
+                if landmark_exc is not None:
+                    detail = f"{landmark_exc}; {fallback_exc}"
+                world.replace(
+                    world.snapshot.model_copy(
+                        update={
+                            "revision": world.snapshot.revision + 1,
+                            "health": (
+                                ComponentHealth(
+                                    component="vision",
+                                    status="degraded",
+                                    detail=detail,
+                                ),
+                            ),
+                        }
+                    )
                 )
-            )
     else:
         world.replace(
             world.snapshot.model_copy(
