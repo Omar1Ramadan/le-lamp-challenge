@@ -5,6 +5,14 @@
 - Location is scene-relative and monocular. Depth bands are heuristics from bounding-box size, not metric 3D distance.
 - Object memory is strongest for curated demo objects and labels. Similar objects can produce ambiguity and should be reported as uncertainty.
 - Live engagement quality depends on lighting, camera placement, occlusion, glasses, and model availability.
+- Face detection falls back through MediaPipe → OpenCV Haar cascade → heuristic skin-color region detection. Each fallback reduces accuracy.
+  - MediaPipe (face_landmarker.task model) gives the best gaze and head-pose estimates.
+  - OpenCV Haar cascade is a fast CPU detector but lacks blendshape gaze tracking.
+  - Heuristic skin-region fallback is a coarse pixel-based detector with no real face geometry.
+  - Use `FACE_DETECTOR_MODE=mediapipe` to force MediaPipe and get a clear degradation report if it fails.
+  - Use `FACE_DETECTOR_MODE=opencv` or `heuristic` to test lower-quality paths.
+  - Common MediaPipe failures: missing `face_landmarker.task` model file, unsupported Python/platform, or import errors.
+- The active detector is reported in world health (`face_detector` component) and in `/api/vision/frame` response (`vision_status.face_detector`).
 
 ## Identity and speakers
 

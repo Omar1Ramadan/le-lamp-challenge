@@ -57,6 +57,8 @@ Important variables:
 - `CONVERSATION_PROVIDER=template` keeps recall deterministic and offline.
 - `ENABLE_CLOUD_CONVERSATION=true` plus `OPENAI_API_KEY` enables the optional cloud provider.
 - `ENABLE_LIVE_CAPTURE=true` turns on backend-host webcam and microphone workers.
+- `FACE_DETECTOR_MODE` selects the face detection backend: `auto` (default, tries MediaPipe → OpenCV → heuristic), `mediapipe`, `opencv`, `heuristic`, or `disabled`.
+- `ENABLE_MEDIAPIPE_FACE_LANDMARKER=true` is a legacy alias for `FACE_DETECTOR_MODE=mediapipe` (when mode is `auto`).
 - `DATABASE_PATH` points at the local SQLite evidence memory.
 - `SNAPSHOT_PATH` points at private local snapshots if enabled.
 - `RETENTION_DAYS` controls cleanup policy for private runtime data.
