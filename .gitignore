@@ -32,6 +32,6 @@ frontend/playwright-report/
 node_modules/
 frontend/node_modules/
 frontend/dist/
-docs/superpowers/plans
+docs/superpowers/*
 .hermes/
 .superpowers/
