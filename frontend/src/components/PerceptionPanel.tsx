@@ -27,6 +27,19 @@ export function PerceptionPanel({ people, objects, health }: PerceptionPanelProp
       {objectDetectorHealth?.detail && (
         <p className="status-detail">{objectDetectorHealth.detail}</p>
       )}
+      {(() => {
+        const faceHealth = health.find((h) => h.component === "face_detector");
+        if (!faceHealth) return null;
+        return (
+          <p className={
+            faceHealth.status === "disabled" ? "status-disabled" :
+            faceHealth.status === "degraded" ? "status-degraded" : ""
+          }>
+            Face detector: {faceHealth.status}
+            {faceHealth.detail ? ` — ${faceHealth.detail}` : ""}
+          </p>
+        );
+      })()}
       <ul>
         {people.map((person) => (
           <li key={person.person_id}>

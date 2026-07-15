@@ -55,6 +55,13 @@ export async function uploadVisionFrame<T>(
   behavior_timeline?: unknown;
   ok: boolean;
   vision_debug?: unknown;
+  vision_status?: {
+    face_detector: {
+      name: string;
+      status: string;
+      detail: string | null;
+    };
+  } | null;
   world_snapshot?: T;
 }> {
   return fetchJson("/api/vision/frame", {

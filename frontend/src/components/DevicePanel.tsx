@@ -28,6 +28,11 @@ export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot }: DevicePanel
   const [message, setMessage] = useState("Camera and microphone are off.");
   const [monitorAudio, setMonitorAudio] = useState(false);
   const [visionDebug, setVisionDebug] = useState<VisionDebug | null>(null);
+  const [visionStatus, setVisionStatus] = useState<{
+    name: string;
+    status: string;
+    detail: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -122,6 +127,7 @@ export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot }: DevicePanel
         );
       }
       setVisionDebug(isVisionDebug(response.vision_debug) ? response.vision_debug : null);
+      setVisionStatus(response.vision_status?.face_detector ?? null);
       if (response.behavior_timeline) {
         onBehaviorTimeline?.(response.behavior_timeline as BehaviorTimeline);
       }
@@ -150,6 +156,7 @@ export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot }: DevicePanel
         Status: <strong>{status}</strong>
       </p>
       <p>{message}</p>
+      {visionStatus && <p className={faceDetectorLabel(visionStatus).className}>{faceDetectorLabel(visionStatus).label}</p>}
       <div className="device-actions">
         <button type="button" onClick={() => void startDevices()} disabled={status === "starting"}>
           {stream ? "Restart devices" : "Start camera and mic"}
@@ -169,6 +176,29 @@ export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot }: DevicePanel
       </label>
     </section>
   );
+}
+
+function faceDetectorLabel(detector: { name: string; status: string; detail: string | null }): {
+  label: string;
+  className: string;
+} {
+  const nameMap: Record<string, string> = {
+    mediapipe_face_landmarker: "MediaPipe",
+    opencv_haar: "OpenCV",
+    heuristic_skin_region: "Heuristic",
+    none: "None",
+  };
+  const short = nameMap[detector.name] ?? detector.name;
+  if (detector.status === "disabled") {
+    return { label: "Face detector: disabled", className: "status-disabled" };
+  }
+  if (detector.status === "degraded") {
+    const warning = detector.name === "heuristic_skin_region"
+      ? " — low reliability"
+      : " fallback";
+    return { label: `Face detector: ${short}${warning}`, className: "status-degraded" };
+  }
+  return { label: `Face detector: ${short}`, className: "status-active" };
 }
 
 function VisionOverlay({ debug }: { debug: VisionDebug | null }) {
