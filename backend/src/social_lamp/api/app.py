@@ -198,9 +198,7 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
         browser_metadata = getattr(request.app.state, "browser_face_processor_metadata", None)
         browser_object_detector = _browser_object_detector(request.app)
         object_health = (
-            browser_object_detector.health()
-            if hasattr(browser_object_detector, "health")
-            else None
+            browser_object_detector.health() if hasattr(browser_object_detector, "health") else None
         )
         vision_status: dict[str, object] | None = None
         if browser_metadata is not None or object_health is not None:

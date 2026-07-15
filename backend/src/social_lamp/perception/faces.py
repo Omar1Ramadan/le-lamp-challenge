@@ -210,9 +210,7 @@ def _estimate_pose_from_landmarks(
     return float(np.degrees(yaw)), float(np.degrees(pitch)), float(np.degrees(roll))
 
 
-def _box_proxy_pose(
-    center_x: float, center_y: float
-) -> tuple[float, float]:
+def _box_proxy_pose(center_x: float, center_y: float) -> tuple[float, float]:
     horizontal_offset = center_x - 0.5
     vertical_offset = center_y - 0.45
     yaw = horizontal_offset * 120.0
@@ -519,12 +517,7 @@ class HeuristicFaceProcessor:
         y = 0.299 * r + 0.587 * g + 0.114 * b
         cr = r - g
         cb = b - g
-        ycrcb_skin = (
-            (y > 40)
-            & (cr > -10) & (cr < 45)
-            & (cb > -30) & (cb < 15)
-            & ((cr - cb) > 3)
-        )
+        ycrcb_skin = (y > 40) & (cr > -10) & (cr < 45) & (cb > -30) & (cb < 15) & ((cr - cb) > 3)
 
         return bgr_skin | ycrcb_skin
 
@@ -532,9 +525,7 @@ class HeuristicFaceProcessor:
         cv2_mod = self._ensure_cv2()
         if cv2_mod is not None:
             kernel = cv2_mod.getStructuringElement(cv2_mod.MORPH_ELLIPSE, (5, 5))
-            opened = cv2_mod.morphologyEx(
-                mask.astype(np.uint8), cv2_mod.MORPH_OPEN, kernel
-            )
+            opened = cv2_mod.morphologyEx(mask.astype(np.uint8), cv2_mod.MORPH_OPEN, kernel)
             return opened.astype(np.bool_)
 
         m = mask.copy()
@@ -554,9 +545,7 @@ class HeuristicFaceProcessor:
             m = d
         return m
 
-    def _find_largest_bbox(
-        self, mask: NDArray[np.bool_]
-    ) -> tuple[int, int, int, int] | None:
+    def _find_largest_bbox(self, mask: NDArray[np.bool_]) -> tuple[int, int, int, int] | None:
         cv2_mod = self._ensure_cv2()
         if cv2_mod is not None:
             num_labels, labels, stats, centroids = cv2_mod.connectedComponentsWithStats(

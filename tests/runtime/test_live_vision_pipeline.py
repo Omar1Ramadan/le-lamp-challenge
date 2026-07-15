@@ -609,9 +609,7 @@ async def test_location_change_under_one_second_does_not_record(tmp_path: Path) 
         left_bbox: BBox = (0.0, 0.1, 0.2, 0.5)
         moved_detection = Detection(label="keys", confidence=0.92, bbox=left_bbox, mono_ns=100)
         for step in range(5):
-            frame = CapturedFrame(
-                np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=100 + step
-            )
+            frame = CapturedFrame(np.zeros((4, 4, 3), dtype=np.uint8), mono_ns=100 + step)
             await coordinator.process_vision_frame(
                 frame,
                 face_processor=FakeFaceProcessor(),

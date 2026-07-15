@@ -124,6 +124,7 @@ async def test_audio_updates_preserve_vision_people_when_no_speaker(tmp_path: Pa
     class FakeObjectDetector:
         def detect(self, image):
             return ()
+
         def health(self):
             return ComponentHealth(component="object_detector", status="disabled")
 
@@ -142,6 +143,7 @@ async def test_audio_updates_preserve_vision_people_when_no_speaker(tmp_path: Pa
     class SilentClassifier:
         def classify(self, pcm, sample_rate):
             from social_lamp.audio.analysis import AudioClass, VoiceFrame
+
             return VoiceFrame(False, AudioClass.NOISE, 0.1)
 
     await coordinator.process_audio_chunk(
