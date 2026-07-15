@@ -1,18 +1,12 @@
 from pathlib import Path
-from time import monotonic_ns
 
 import pytest
 from social_lamp.audio.stream import MicrophoneChunk
 from social_lamp.domain.contracts import (
-    AudioMode,
     ComponentHealth,
-    PersonState,
-    SocialState,
-    WorldSnapshot,
 )
 from social_lamp.runtime.coordinator import RuntimeCoordinator
-from social_lamp.runtime.testing import FakeSimulator, FakeMetrics, MutableWorldModel, TestMemory
-from social_lamp.world.commands import Source
+from social_lamp.runtime.testing import FakeMetrics, FakeSimulator, MutableWorldModel, TestMemory
 
 
 @pytest.mark.asyncio
@@ -85,8 +79,8 @@ async def test_set_health_duplicate_does_not_publish_repeatedly(tmp_path: Path) 
 
 @pytest.mark.asyncio
 async def test_vision_exception_marks_health_degraded(tmp_path: Path) -> None:
-    from social_lamp.capture.frames import CapturedFrame
     import numpy as np
+    from social_lamp.capture.frames import CapturedFrame
 
     coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
 
@@ -102,14 +96,15 @@ async def test_vision_exception_marks_health_degraded(tmp_path: Path) -> None:
         anchors={},
     )
     assert result is None
-    assert ComponentHealth(component="vision", status="degraded", detail="model failure") in coordinator.world.snapshot.health
+    expected = ComponentHealth(component="vision", status="degraded", detail="model failure")
+    assert expected in coordinator.world.snapshot.health
 
 
 @pytest.mark.asyncio
 async def test_audio_updates_preserve_vision_people_when_no_speaker(tmp_path: Path) -> None:
+    import numpy as np
     from social_lamp.capture.frames import CapturedFrame
     from social_lamp.perception.faces import FaceResult
-    import numpy as np
 
     class FakeFaceProcessor:
         def process(self, frame, *, now_mono_ns):
@@ -166,11 +161,11 @@ async def test_vision_frame_only_publishes_meaningful_change(tmp_path: Path) -> 
         nonlocal publish_count
         publish_count += 1
 
+    import numpy as np
     from social_lamp.capture.frames import CapturedFrame
     from social_lamp.domain.clock import FakeClock
     from social_lamp.perception.faces import FaceResult
     from uuid6 import uuid7
-    import numpy as np
 
     clock = FakeClock(100, "2026-07-04T12:00:00Z")
     world = MutableWorldModel(session_id=uuid7(), clock=clock)

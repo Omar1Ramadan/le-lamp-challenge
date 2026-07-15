@@ -49,13 +49,16 @@ def test_distinct_health_changes_increment_revision() -> None:
     )
     assert first is not None and first.revision == 1
     assert second is not None and second.revision == 2
-    assert ComponentHealth(component="camera", status="degraded", detail="no signal") in second.health
+    ch = ComponentHealth(component="camera", status="degraded", detail="no signal")
+    assert ch in second.health
 
 
 def test_stale_health_update_is_ignored() -> None:
     clock = FakeClock(100, "2026-07-04T12:00:00Z")
     model = WorldModel(session_id=UUID("018f0000-0000-7000-8000-000000000001"), clock=clock)
-    model.apply_health(HealthUpdate(component="camera", status="ok", detail=None, as_of_mono_ns=200))
+    model.apply_health(
+        HealthUpdate(component="camera", status="ok", detail=None, as_of_mono_ns=200)
+    )
     stale = model.apply_health(
         HealthUpdate(component="camera", status="degraded", detail="old", as_of_mono_ns=100)
     )

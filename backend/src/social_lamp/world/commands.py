@@ -4,7 +4,6 @@ from social_lamp.domain.contracts import (
     ObjectState,
     PersonState,
     SocialState,
-    WorldSnapshot,
 )
 
 

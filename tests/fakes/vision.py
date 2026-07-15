@@ -2,7 +2,6 @@ from collections.abc import Sequence
 
 import numpy as np
 from numpy.typing import NDArray
-
 from social_lamp.capture.frames import CapturedFrame
 from social_lamp.domain.contracts import ComponentHealth
 from social_lamp.perception.faces import FaceResult

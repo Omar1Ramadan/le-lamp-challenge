@@ -27,7 +27,7 @@ export interface BadgeClass {
   label: string;
 }
 
-export function badgeForStatus(status: string, detail?: string | null): BadgeClass {
+export function badgeForStatus(status: string, _detail?: string | null): BadgeClass {
   switch (status) {
     case "active":
       return { className: "badge-active", label: "Active" };

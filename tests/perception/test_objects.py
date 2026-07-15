@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 from social_lamp.config import Settings
+from social_lamp.perception.location import BBox
 from social_lamp.perception.objects import (
     Detection,
     FastObjectDetector,
@@ -9,7 +10,6 @@ from social_lamp.perception.objects import (
     ObjectTrack,
     YoloObjectDetector,
 )
-from social_lamp.perception.location import BBox
 
 
 class _FakeModel:
@@ -65,7 +65,9 @@ def test_yolo_detector_does_not_crash_on_empty_image() -> None:
 BBOX: BBox = (0.35, 0.35, 0.55, 0.65)
 
 
-def _detections(label: str, n: int, *, start_ns: int = 0, confidence: float = 0.9) -> list[Detection]:
+def _detections(
+    label: str, n: int, *, start_ns: int = 0, confidence: float = 0.9
+) -> list[Detection]:
     return [
         Detection(label=label, confidence=confidence, bbox=BBOX, mono_ns=start_ns + i)
         for i in range(n)

@@ -14,11 +14,11 @@ from social_lamp.runtime.coordinator import (
     should_record_object_observation,
 )
 from social_lamp.runtime.testing import build_test_runtime
+
 from tests.fakes.vision import (
     FailingFaceProcessor,
     SequenceFaceProcessor,
     TimedObjectDetector,
-    make_detection,
     make_face,
     make_frame,
 )
@@ -313,7 +313,9 @@ async def test_active_detector_with_objects_updates_world(tmp_path: Path) -> Non
 
 def test_first_stable_triggers_record() -> None:
     mem = ObjectMemoryState()
-    decision, reason = should_record_object_observation(mem, "keys", "center", "midground", "desk", 100)
+    decision, reason = should_record_object_observation(
+        mem, "keys", "center", "midground", "desk", 100
+    )
     assert decision is True
     assert reason == "first_stable"
 
@@ -326,7 +328,9 @@ def test_unchanged_does_not_record_before_refresh() -> None:
         last_recorded_anchor="desk",
         last_recorded_mono_ns=100,
     )
-    decision, reason = should_record_object_observation(mem, "keys", "center", "midground", "desk", 200)
+    decision, reason = should_record_object_observation(
+        mem, "keys", "center", "midground", "desk", 200
+    )
     assert decision is False
     assert reason == "unchanged"
 
@@ -354,7 +358,9 @@ def test_label_changed_triggers_record() -> None:
         last_recorded_anchor="desk",
         last_recorded_mono_ns=100,
     )
-    decision, reason = should_record_object_observation(mem, "bottle", "center", "midground", "desk", 200)
+    decision, reason = should_record_object_observation(
+        mem, "bottle", "center", "midground", "desk", 200
+    )
     assert decision is True
     assert reason == "label_changed"
 
@@ -367,7 +373,9 @@ def test_location_changed_pending_before_threshold() -> None:
         last_recorded_anchor="desk",
         last_recorded_mono_ns=100,
     )
-    decision, reason = should_record_object_observation(mem, "keys", "left", "midground", "desk", 200)
+    decision, reason = should_record_object_observation(
+        mem, "keys", "left", "midground", "desk", 200
+    )
     assert decision is False
     assert reason == "location_pending"
 
@@ -451,8 +459,12 @@ def test_location_pending_pending_loc_different_from_new_loc() -> None:
 def test_multiple_tracks_have_independent_memory_state() -> None:
     mem_a = ObjectMemoryState(last_recorded_label="keys", last_recorded_mono_ns=100)
     mem_b = ObjectMemoryState()
-    decision_a, _ = should_record_object_observation(mem_a, "keys", "center", "midground", None, 200)
-    decision_b, reason_b = should_record_object_observation(mem_b, "bottle", "center", "midground", None, 200)
+    decision_a, _ = should_record_object_observation(
+        mem_a, "keys", "center", "midground", None, 200
+    )
+    decision_b, reason_b = should_record_object_observation(
+        mem_b, "bottle", "center", "midground", None, 200
+    )
     assert decision_a is False
     assert decision_b is True
     assert reason_b == "first_stable"
@@ -470,7 +482,9 @@ def test_label_change_overrides_location_pending() -> None:
         pending_anchor="desk",
         pending_since_mono_ns=200,
     )
-    decision, reason = should_record_object_observation(mem, "bottle", "left", "midground", "desk", 500)
+    decision, reason = should_record_object_observation(
+        mem, "bottle", "left", "midground", "desk", 500
+    )
     assert decision is True
     assert reason == "label_changed"
 
@@ -629,7 +643,9 @@ async def test_location_change_over_one_second_records_once(tmp_path: Path) -> N
         assert await memory.count_observations() == 1
 
         left_bbox: BBox = (0.0, 0.1, 0.2, 0.5)
-        moved_detection = Detection(label="keys", confidence=0.92, bbox=left_bbox, mono_ns=1_000_000_000)
+        moved_detection = Detection(
+            label="keys", confidence=0.92, bbox=left_bbox, mono_ns=1_000_000_000
+        )
         for step in range(5):
             frame = CapturedFrame(
                 np.zeros((4, 4, 3), dtype=np.uint8),

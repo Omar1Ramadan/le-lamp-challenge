@@ -6,12 +6,11 @@ from social_lamp.perception.faces import (
     HeuristicFaceProcessor,
     MediaPipeFaceAdapter,
     OpenCvFaceProcessor,
-    build_face_detector,
-    face_result_to_signals,
     _box_proxy_pose,
     _euler_from_mediapipe_matrix,
+    build_face_detector,
+    face_result_to_signals,
 )
-
 
 # ---------------------------------------------------------------------------
 # Existing tests updated for new FaceResult / face_result_to_signals API

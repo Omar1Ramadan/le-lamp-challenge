@@ -260,7 +260,9 @@ class RuntimeCoordinator:
                 classifier=classifier,
             )
 
-    async def _set_health(self, component: str, status: str, detail: str | None, *, mono_ns: int | None = None) -> None:
+    async def _set_health(
+        self, component: str, status: str, detail: str | None, *, mono_ns: int | None = None
+    ) -> None:
         update = HealthUpdate(
             component=component,
             status=status,
