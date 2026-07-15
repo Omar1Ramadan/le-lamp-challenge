@@ -37,3 +37,18 @@ class Settings(BaseSettings):
     enable_cloud_conversation: bool = Field(
         default=False, validation_alias="ENABLE_CLOUD_CONVERSATION"
     )
+    enable_object_detection: bool = Field(
+        default=False, validation_alias="ENABLE_OBJECT_DETECTION"
+    )
+    object_detector_model: str = Field(
+        default="yolov8n.pt", validation_alias="OBJECT_DETECTOR_MODEL"
+    )
+    object_detection_confidence: float = Field(
+        default=0.45, validation_alias="OBJECT_DETECTION_CONFIDENCE"
+    )
+    object_detection_max_fps: int = Field(
+        default=8, validation_alias="OBJECT_DETECTION_MAX_FPS"
+    )
+    object_detection_classes: str | None = Field(
+        default=None, validation_alias="OBJECT_DETECTION_CLASSES"
+    )

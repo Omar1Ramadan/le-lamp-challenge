@@ -1,4 +1,5 @@
 import numpy as np
+from social_lamp.config import Settings
 from social_lamp.domain.contracts import ComponentHealth
 from social_lamp.perception.objects import FastObjectDetector, NullObjectDetector
 
@@ -30,3 +31,12 @@ def test_active_detector_returns_empty_on_no_objects() -> None:
     image = np.zeros((100, 100, 3), dtype=np.uint8)
     detections = detector.detect(image)
     assert detections == ()
+
+
+def test_object_detection_settings_default_to_disabled() -> None:
+    settings = Settings()
+    assert settings.enable_object_detection is False
+    assert settings.object_detector_model == "yolov8n.pt"
+    assert settings.object_detection_confidence == 0.45
+    assert settings.object_detection_max_fps == 8
+    assert settings.object_detection_classes is None
