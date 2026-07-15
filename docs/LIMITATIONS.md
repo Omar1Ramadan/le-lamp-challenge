@@ -19,11 +19,16 @@
 - The active detector is reported in world health (`face_detector` component) and in `/api/vision/frame` response (`vision_status.face_detector`).
 - The `/api/vision/frame` response also includes `vision_status.object_detector` with the object detector's health.
 - The dashboard Perception panel shows status badges ("Active", "Degraded", "Disabled") for both face and object detectors. The Device panel overlay shows the active gaze source, pose source, and yaw/pitch angles when available.
+- `FACE_DETECTION_MAX_FACES` controls the MediaPipe maximum face count. The default is 4 and valid values are 1 through 8.
+- Multiple visible faces are tracked as anonymous session-local person IDs (`person-1`, `person-2`, etc.). Tracking is spatial/temporal only, based on face bounding-box overlap between frames.
+- `primary_person_id` selects one active person for behaviors that still need a single target. Selection favors stronger engagement, then larger face area, and avoids rapid switching.
+- Engagement calibration improves robustness for the current camera/person setup but is still sensitive to large posture changes, lighting changes, occlusion, and primary-person switches. It is session-local and falls back to default thresholds when unavailable, failed, cancelled, or not applicable.
 - The heuristic fallback is not suitable for evaluation claims and exists only to prevent the demo from failing completely when proper models are unavailable.
 
 ## Identity and speakers
 
 - Person identity is session-only. The system should not claim durable identity across restarts or separate sessions.
+- Person IDs are anonymous runtime labels only. They are not face recognition IDs and must not be interpreted as real identity.
 - Active-speaker association is probabilistic and may be anonymous when visual/audio evidence is insufficient.
 - Affect evidence is coarse, bounded, and confidence-gated; it is not an emotion detector.
 

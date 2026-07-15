@@ -10,10 +10,25 @@ Local runtime data may include:
 
 - SQLite evidence memory at `DATABASE_PATH`.
 - Object labels, scene-relative locations, monotonic timestamps, UTC display timestamps, and evidence IDs.
+- Anonymous session-local person IDs such as `person-1` and `person-2` while the runtime is active.
 - Optional private snapshots if `SNAPSHOT_PATH` is enabled for a local live demo.
 - Evaluation reports under `output/evaluation/` that may include hardware profile and configuration hash.
 
 Local runtime data must not include committed secrets, raw private media, model weights, or private snapshots.
+
+## Face tracking and identity
+
+Multi-person face tracking uses only short-lived spatial/temporal association between face bounding boxes in nearby frames. It does not perform face recognition, create biometric embeddings, or persist identity across sessions. Runtime labels such as `person-1` and `person-2` are anonymous and reset with the session.
+
+## Anonymous person tracking
+
+Live face tracking uses anonymous session-local labels such as `person-1` and `person-2`. These IDs are assigned from face bounding-box movement within the current runtime session only. They are not biometric identities, are not face-recognition results, and are not designed to persist across restarts or separate sessions.
+
+The tracker does not generate or store face embeddings. It matches detections spatially over time using bounding-box overlap and confidence signals so the runtime can keep engagement state stable while multiple people are visible.
+
+## Engagement calibration
+
+Engagement calibration is session-local. During a three-second calibration window, the runtime may compute neutral head pose, face scale, and gaze baseline for the current anonymous person track. These calibration baselines are not persisted, are not exposed in normal UI/API responses, and are not used for identity recognition. If calibration is cancelled, fails, or is unavailable, the system uses fallback engagement thresholds.
 
 ## Retention
 

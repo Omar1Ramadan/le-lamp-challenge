@@ -97,6 +97,10 @@ The replay demonstrates engagement, attention seeking, memory formation, and mem
 
 The functional-demo proof is backend driven: replay buttons come from `GET /api/replays`, proof state is updated from WebSocket/API messages, object recall uses persisted SQLite evidence, and the browser simulator receives runtime timelines over `/ws`.
 
+## Engagement calibration
+
+Live/browser engagement can be calibrated from the Perception panel. Calibration is optional and session-local: a three-second capture records neutral head pose, face scale, and gaze baseline when available for the current anonymous person track. Calibration does not identify people across sessions, and raw baselines are not persisted or exposed in normal UI/API responses. When calibration is unavailable, failed, or cancelled, engagement scoring uses fallback thresholds.
+
 ## Functional local-first acceptance
 
 For release proof, run both paths:

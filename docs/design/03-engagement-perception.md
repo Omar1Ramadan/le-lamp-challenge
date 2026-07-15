@@ -22,6 +22,10 @@ No face embeddings are persisted. Tracks reset at session end.
 
 Calibration is optional but recommended. During a three-second prompt, the user looks toward the camera from their intended position. The system records neutral head pose, typical face scale, and usable eye-signal variance. If calibration is skipped, conservative defaults apply. A calibration is valid only for the current session and camera configuration.
 
+The runtime exposes calibration as `uncalibrated`, `calibrating`, `calibrated`, `failed`, or `expired`. Calibration applies only to the current anonymous `primary_person_id`; if the primary person changes, scoring must not claim identity transfer. Raw neutral baselines stay backend-internal and are not persisted by default.
+
+When calibrated, head-pose scoring uses yaw/pitch offsets from the neutral baseline, proximity uses the calibrated face-scale ratio, and gaze uses the calibrated baseline when available. If gaze calibration is unavailable, pose and scale calibration can still operate in partial mode. Uncalibrated, failed, or cancelled calibration uses the existing fallback thresholds.
+
 The UI shows whether head, gaze, proximity, and audio signals are available. Unavailable signals are removed and remaining weights are normalized rather than treated as negative evidence.
 
 ## Fused Score
