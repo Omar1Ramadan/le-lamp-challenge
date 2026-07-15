@@ -49,19 +49,15 @@ export async function stopSession(): Promise<{ ok: boolean; running: boolean }> 
   return fetchJson("/api/session/stop", { method: "POST" });
 }
 
+import type { VisionStatus } from "./vision";
+
 export async function uploadVisionFrame<T>(
   imageBase64: string,
 ): Promise<{
   behavior_timeline?: unknown;
   ok: boolean;
   vision_debug?: unknown;
-  vision_status?: {
-    face_detector: {
-      name: string;
-      status: string;
-      detail: string | null;
-    };
-  } | null;
+  vision_status?: VisionStatus | null;
   world_snapshot?: T;
 }> {
   return fetchJson("/api/vision/frame", {

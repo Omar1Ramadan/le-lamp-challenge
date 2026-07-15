@@ -17,6 +17,7 @@ import {
   submitText,
   type ReplaySummary,
 } from "./lib/api";
+import type { VisionStatus } from "./lib/vision";
 import { connectSocket } from "./lib/socket";
 import { LampScene } from "./scene/LampScene";
 import {
@@ -43,6 +44,7 @@ function App() {
   const [timelineElapsedMs, setTimelineElapsedMs] = useState(0);
   const [showEvidence, setShowEvidence] = useState(false);
   const [sessionRunning, setSessionRunning] = useState(true);
+  const [visionStatus, setVisionStatus] = useState<VisionStatus | null>(null);
   const world = state.world;
   const pose = useMemo(
     () => poseFromTimeline(state.timeline, timelineElapsedMs),
@@ -125,7 +127,12 @@ function App() {
             {lampAction}
           </div>
         </section>
-        <PerceptionPanel people={world?.people ?? []} objects={world?.objects ?? []} health={world?.health ?? []} />
+        <PerceptionPanel
+          people={world?.people ?? []}
+          objects={world?.objects ?? []}
+          health={world?.health ?? []}
+          visionStatus={visionStatus}
+        />
         <EvidenceTimeline evidence={state.evidence} />
         <DevicePanel
           onBehaviorTimeline={(timeline) => {
@@ -139,6 +146,7 @@ function App() {
           onWorldSnapshot={(snapshot) =>
             dispatch({ seq: state.lastSequence + 1, type: "world_snapshot", body: snapshot })
           }
+          onVisionStatus={setVisionStatus}
         />
         <Inspector
           state={world?.social_state ?? "idle"}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { uploadVisionFrame } from "../lib/api";
 import type { BehaviorTimeline } from "../contracts/generated";
 import type { DashboardWorldSnapshot } from "../state/store";
+import type { VisionStatus } from "../lib/vision";
 
 type DeviceStatus = "idle" | "starting" | "live" | "error";
 
@@ -11,15 +12,21 @@ interface VisionDebug {
   box: { height: number; width: number; x: number; y: number };
   eyes?: { height: number; width: number; x: number; y: number }[];
   gaze_source?: string;
+  pose_source?: string;
+  pose_quality?: number;
+  yaw_degrees?: number;
+  pitch_degrees?: number;
+  roll_degrees?: number;
   target: { x: number; y: number };
 }
 
 interface DevicePanelProps {
   onBehaviorTimeline?: (timeline: BehaviorTimeline) => void;
   onWorldSnapshot?: (snapshot: DashboardWorldSnapshot) => void;
+  onVisionStatus?: (status: VisionStatus | null) => void;
 }
 
-export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot }: DevicePanelProps) {
+export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot, onVisionStatus }: DevicePanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const uploadInFlightRef = useRef(false);
@@ -127,7 +134,13 @@ export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot }: DevicePanel
         );
       }
       setVisionDebug(isVisionDebug(response.vision_debug) ? response.vision_debug : null);
-      setVisionStatus(response.vision_status?.face_detector ?? null);
+      const fd = response.vision_status?.face_detector;
+      setVisionStatus(fd ?? null);
+      onVisionStatus?.(response.vision_status ?? null);
+      if (fd && fd.status === "degraded") {
+        const why = fd.detail ?? "detector degraded";
+        setMessage(`Backend vision: ${why}`);
+      }
       if (response.behavior_timeline) {
         onBehaviorTimeline?.(response.behavior_timeline as BehaviorTimeline);
       }
@@ -157,6 +170,9 @@ export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot }: DevicePanel
       </p>
       <p>{message}</p>
       {visionStatus && <p className={faceDetectorLabel(visionStatus).className}>{faceDetectorLabel(visionStatus).label}</p>}
+      {visionStatus && visionStatus.detail && visionStatus.status === "degraded" && (
+        <p className="status-detail">{visionStatus.detail}</p>
+      )}
       <div className="device-actions">
         <button type="button" onClick={() => void startDevices()} disabled={status === "starting"}>
           {stream ? "Restart devices" : "Start camera and mic"}
@@ -185,7 +201,7 @@ function faceDetectorLabel(detector: { name: string; status: string; detail: str
   const nameMap: Record<string, string> = {
     mediapipe_face_landmarker: "MediaPipe",
     opencv_haar: "OpenCV",
-    heuristic_skin_region: "Heuristic",
+    heuristic_skin_region: "heuristic fallback",
     none: "None",
   };
   const short = nameMap[detector.name] ?? detector.name;
@@ -194,9 +210,12 @@ function faceDetectorLabel(detector: { name: string; status: string; detail: str
   }
   if (detector.status === "degraded") {
     const warning = detector.name === "heuristic_skin_region"
-      ? " — low reliability"
-      : " fallback";
-    return { label: `Face detector: ${short}${warning}`, className: "status-degraded" };
+      ? "Low reliability — install/enable MediaPipe for better detection"
+      : "fallback";
+    return {
+      label: `Face detector: ${short} — ${warning}`,
+      className: "status-degraded",
+    };
   }
   return { label: `Face detector: ${short}`, className: "status-active" };
 }
@@ -218,6 +237,23 @@ function VisionOverlay({ debug }: { debug: VisionDebug | null }) {
   };
   const eyes = Array.isArray(debug.eyes) ? debug.eyes : [];
 
+  const isHeuristic = debug.gaze_source === "heuristic_skin_region";
+  const poseStr = debug.pose_source && debug.pose_source !== "unavailable"
+    ? ` · pose ${debug.pose_source}`
+    : "";
+  const yprStr = debug.yaw_degrees !== undefined && debug.pitch_degrees !== undefined
+    ? ` · yaw ${Math.round(debug.yaw_degrees)}° pitch ${Math.round(debug.pitch_degrees)}°`
+    : "";
+
+  let label: string;
+  let labelClass = "";
+  if (isHeuristic) {
+    label = "possible presence · low-confidence attention estimate";
+    labelClass = "vision-label-degraded";
+  } else {
+    label = `${debug.gaze_source ?? "backend pose"} · attention ${Math.round(debug.attention_proxy * 100)}%${poseStr}${yprStr}`;
+  }
+
   return (
     <div className="vision-overlay" aria-label="Backend vision pose overlay">
       <div className="vision-box" style={boxStyle} />
@@ -234,10 +270,7 @@ function VisionOverlay({ debug }: { debug: VisionDebug | null }) {
         />
       ))}
       <div className="vision-target" style={targetStyle} />
-      <span className="vision-label">
-        {debug.gaze_source ?? "backend pose"} · attention{" "}
-        {Math.round(debug.attention_proxy * 100)}%
-      </span>
+      <span className={`vision-label ${labelClass}`}>{label}</span>
     </div>
   );
 }
