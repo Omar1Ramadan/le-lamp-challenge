@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     object_detection_classes: str | None = Field(
         default=None, validation_alias="OBJECT_DETECTION_CLASSES"
     )
+    face_detection_max_faces: int = Field(
+        default=4, ge=1, le=8, validation_alias="FACE_DETECTION_MAX_FACES"
+    )
 
     @model_validator(mode="after")
     def _reconcile_face_detector_mode(self) -> Settings:
