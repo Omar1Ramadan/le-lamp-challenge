@@ -1,0 +1,25 @@
+{
+  "fixture_id": "engagement_basic_001",
+  "sample_only": false,
+  "description": "Person becomes engaged after facing lamp.",
+  "events": [
+    {"t_ms": 0, "record_type": "observation", "body": {"kind": "face_presence", "payload": {"confidence": 0.91}}},
+    {"t_ms": 100, "record_type": "snapshot", "body": {"revision": 1, "social_state": "candidate"}},
+    {"t_ms": 800, "record_type": "snapshot", "body": {"revision": 2, "social_state": "engaged"}},
+    {"t_ms": 820, "record_type": "intent", "body": {"kind": "acknowledge", "urgency": 70}},
+    {"t_ms": 830, "record_type": "timeline", "body": {"duration_ms": 700}}
+  ],
+  "labels": {
+    "engagement_segments": [
+      {"person_id": "person-1", "start_ms": 0, "end_ms": 100, "state": "idle"},
+      {"person_id": "person-1", "start_ms": 100, "end_ms": 800, "state": "candidate"},
+      {"person_id": "person-1", "start_ms": 800, "end_ms": 2000, "state": "engaged"}
+    ],
+    "expected_transitions": [
+      {"from_state": "idle", "to_state": "candidate", "at_ms": 100, "tolerance_ms": 200},
+      {"from_state": "candidate", "to_state": "engaged", "at_ms": 800, "tolerance_ms": 200}
+    ],
+    "expected_memories": [],
+    "expected_grounded_answers": []
+  }
+}

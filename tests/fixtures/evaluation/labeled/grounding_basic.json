@@ -1,0 +1,36 @@
+{
+  "fixture_id": "grounding_basic_001",
+  "sample_only": false,
+  "description": "Grounded answer requires evidence, not just matching text.",
+  "events": [
+    {"t_ms": 0, "record_type": "snapshot", "body": {"revision": 0, "social_state": "idle"}},
+    {"t_ms": 100, "record_type": "observation", "body": {"kind": "object_seen", "payload": {"label": "cup", "confidence": 0.95}}},
+    {"t_ms": 500, "record_type": "snapshot", "body": {"revision": 1, "social_state": "candidate"}},
+    {"t_ms": 1000, "record_type": "snapshot", "body": {"revision": 2, "social_state": "engaged"}},
+    {"t_ms": 5000, "record_type": "memory", "body": {"observation_id": "obs-cup-1", "label": "cup", "horizontal_region": "center", "anchor_name": "table"}},
+    {"t_ms": 6000, "record_type": "memory_result", "body": {"query": "Where is my cup?", "status": "found", "evidence_ids": ["obs-cup-1"]}}
+  ],
+  "labels": {
+    "engagement_segments": [
+      {"person_id": "person-1", "start_ms": 0, "end_ms": 500, "state": "idle"},
+      {"person_id": "person-1", "start_ms": 500, "end_ms": 1000, "state": "candidate"},
+      {"person_id": "person-1", "start_ms": 1000, "end_ms": 7000, "state": "engaged"}
+    ],
+    "expected_memories": [
+      {"type": "memory_result", "label": "cup", "within_ms": [5000, 7000], "location": "table"},
+      {"type": "object_seen", "label": "cup", "within_ms": [100, 5000], "location": "table"}
+    ],
+    "expected_transitions": [
+      {"from_state": "idle", "to_state": "candidate", "at_ms": 500, "tolerance_ms": 200},
+      {"from_state": "candidate", "to_state": "engaged", "at_ms": 1000, "tolerance_ms": 200}
+    ],
+    "expected_grounded_answers": [
+      {
+        "query": "Where is my cup?",
+        "expected_answer_contains": ["table", "center"],
+        "required_evidence_types": ["object_seen"],
+        "required_memory_labels": ["cup"]
+      }
+    ]
+  }
+}
