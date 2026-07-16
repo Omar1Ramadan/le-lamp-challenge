@@ -124,9 +124,12 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="status-banner" aria-live="polite">
+      <section className={`status-banner ${connection === "frozen" || connection === "disconnected" ? "status-disconnected" : ""}`} aria-live="polite">
         <span className="status-dot" />
-        Simulator connection: {connection}
+        Connection: <strong>{connection}</strong>
+        {connection === "frozen" ? " — state is stale" : ""}
+        {connection === "resyncing" ? " — fetching authoritative state" : ""}
+        {connection === "reconnecting" ? " — will retry automatically" : ""}
       </section>
       <section className="dashboard-grid">
         <section className="viewport" aria-label="Simulated social lamp viewport">
@@ -172,7 +175,7 @@ function App() {
           evidence={evidence}
           health={world?.health ?? []}
         />
-        <DemoRail metrics={state.metrics} needsResync={state.needsResync} />
+        <DemoRail metrics={state.metrics} needsResync={state.needsResync} connection={connection} />
         <section className="panel demo-proof" aria-label="Replay proof controls">
           <h2>Replay proof</h2>
           <p>
