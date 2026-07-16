@@ -150,3 +150,28 @@ async def test_query_answer_events(tmp_path: Path) -> None:
     if response.grounded:
         grounded = [e for e in captured.events if e["event_type"] == "answer_grounded"]
         assert len(grounded) >= 1
+
+
+@pytest.mark.asyncio
+async def test_fault_event_on_health_transition(tmp_path: Path) -> None:
+    captured = FakeEvidencePublisher()
+    coordinator = _make_test_coordinator(tmp_path, captured)
+
+    await coordinator._set_health("camera", "ok", None)
+    await coordinator._set_health("camera", "degraded", "no signal")
+
+    fault_events = [e for e in captured.events if e["event_type"] == "fault"]
+    assert len(fault_events) >= 1
+    assert "degraded" in fault_events[0]["summary"] or "degraded" in str(fault_events[0]["metadata"])
+
+
+@pytest.mark.asyncio
+async def test_duplicate_health_status_does_not_emit_fault(tmp_path: Path) -> None:
+    captured = FakeEvidencePublisher()
+    coordinator = _make_test_coordinator(tmp_path, captured)
+
+    await coordinator._set_health("camera", "ok", None)
+    await coordinator._set_health("camera", "ok", None)
+
+    fault_events = [e for e in captured.events if e["event_type"] == "fault"]
+    assert len(fault_events) == 0

@@ -345,6 +345,19 @@ class RuntimeCoordinator:
         current = self.world.apply_health(update)
         if current is not None:
             await self._publish_snapshot(current)
+        prev = self._previous_health_status.get(component)
+        if prev is not None and prev != status:
+            severity = "error" if status == "degraded" else ("warning" if status == "disabled" else "info")
+            await self._emit_evidence(
+                event_type="fault",
+                summary=f"Health: {component} -> {status}" + (f" ({detail})" if detail else ""),
+                occurred_at_mono_ns=mono_ns or monotonic_ns(),
+                source="runtime",
+                severity=severity,
+                entity_refs=({"kind": "component", "id": component, "label": component},),
+                metadata={"component": component, "status": status, "detail": detail, "previous_status": prev},
+            )
+        self._previous_health_status[component] = status
 
     def _should_run_object_detection(self, mono_ns: int) -> bool:
         if self._object_detection_max_fps <= 0:
