@@ -755,6 +755,17 @@ class RuntimeCoordinator:
                         captured_at_mono_ns=frame.mono_ns,
                     )
                 )
+                await self._emit_evidence(
+                    event_type="object_memory_created",
+                    summary=f"Memory: {state.label} remembered at {state.horizontal_region or 'unknown'} {state.anchor_name or ''}",
+                    occurred_at_mono_ns=frame.mono_ns,
+                    correlation_id=str(previous.session_id),
+                    source="vision",
+                    severity="info",
+                    entity_refs=({"kind": "object", "id": state.track_id, "label": state.label},),
+                    evidence_refs=(f"vision-{state.track_id}-{frame.mono_ns}",),
+                    metadata={"horizontal_region": state.horizontal_region, "depth_band": state.depth_band, "anchor_name": state.anchor_name},
+                )
                 mem.last_recorded_label = state.label
                 mem.last_recorded_region = state.horizontal_region
                 mem.last_recorded_depth = state.depth_band

@@ -118,3 +118,20 @@ async def test_behavior_suppressed_event_includes_reason(tmp_path: Path) -> None
     if suppressed:
         meta = suppressed[0].get("metadata", {})
         assert "reason" in meta
+
+
+@pytest.mark.asyncio
+async def test_object_memory_created_via_emit_evidence(tmp_path: Path) -> None:
+    captured = FakeEvidencePublisher()
+    coordinator = _make_test_coordinator(tmp_path, captured)
+    await coordinator._emit_evidence(
+        event_type="object_memory_created",
+        summary="Memory: cup remembered on desk",
+        occurred_at_mono_ns=100,
+        source="vision",
+        entity_refs=({"kind": "object", "id": "track-cup", "label": "cup"},),
+        evidence_refs=("obs-1",),
+    )
+    memory_events = [e for e in captured.events if e["event_type"] == "object_memory_created"]
+    assert len(memory_events) == 1
+    assert memory_events[0]["evidence_refs"] == ["obs-1"]
