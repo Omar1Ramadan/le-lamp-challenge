@@ -138,6 +138,9 @@ async def build_live_runtime(
         snapshot_publisher=lambda body: resolved_hub.broadcast(
             {"type": "world_snapshot", "body": body}
         ),
+        evidence_publisher=lambda body: resolved_hub.broadcast(
+            {"type": "evidence_event", "body": body}
+        ),
         object_detection_max_fps=(
             resolved_settings.object_detection_max_fps
             if resolved_settings.enable_object_detection

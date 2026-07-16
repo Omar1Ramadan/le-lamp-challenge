@@ -23,6 +23,7 @@ from social_lamp.domain.contracts import (
     BehaviorTimeline,
     ComponentHealth,
     EngagementCalibrationSnapshot,
+    EvidenceEvent,
     MemoryQuery,
     MemoryResult,
     ObjectState,
@@ -157,6 +158,7 @@ class RuntimeCoordinator:
         audio_source: AudioSource | None = None,
         audio_classifier: object | None = None,
         snapshot_publisher: Callable[[dict[str, object]], Awaitable[None]] | None = None,
+        evidence_publisher: Callable[[dict[str, object]], Awaitable[None]] | None = None,
         object_detection_max_fps: int = 0,
     ) -> None:
         self.world = world
@@ -186,6 +188,9 @@ class RuntimeCoordinator:
         self._audio_source = audio_source
         self._audio_classifier = audio_classifier
         self._snapshot_publisher = snapshot_publisher
+        self._evidence_publisher = evidence_publisher
+        self._previous_social_state_for_event: SocialState | None = None
+        self._previous_health_status: dict[str, str] = {}
         self._last_social_state = SocialState.IDLE
         self._person_tracker = PersonTracker(
             track_expire_ns=FACE_TRACK_EXPIRE_MS * 1_000_000
@@ -354,6 +359,35 @@ class RuntimeCoordinator:
             return
         await self._snapshot_publisher(snapshot.model_dump(mode="json"))
 
+    async def _emit_evidence(
+        self,
+        event_type: str,
+        *,
+        summary: str,
+        occurred_at_mono_ns: int | None = None,
+        correlation_id: str | None = None,
+        source: str = "runtime",
+        severity: str = "info",
+        entity_refs: tuple[dict[str, Any], ...] = (),
+        evidence_refs: tuple[str, ...] = (),
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        if self._evidence_publisher is None:
+            return
+        event = EvidenceEvent(
+            event_id=str(uuid7()),
+            event_type=event_type,
+            correlation_id=correlation_id,
+            occurred_at_mono_ns=occurred_at_mono_ns if occurred_at_mono_ns is not None else monotonic_ns(),
+            source=source,
+            summary=summary,
+            severity=severity,
+            entity_refs=entity_refs,
+            evidence_refs=evidence_refs,
+            metadata=metadata or {},
+        )
+        await self._evidence_publisher(event.model_dump(mode="json"))
+
     async def replay(self, directory: Path) -> None:
         self.replay_messages.clear()
         previous = self.world.snapshot
@@ -498,13 +532,12 @@ class RuntimeCoordinator:
 
     async def _emit_conversation_event(self, event: str, data: dict[str, Any]) -> None:
         self.metrics.increment(f"conversation_{event}")
-        if self._snapshot_publisher is not None:
-            await self._snapshot_publisher(
-                {
-                    "type": "conversation_event",
-                    "body": {"event": event, **data},
-                }
-            )
+        await self._emit_evidence(
+            event_type=event,
+            summary=f"conversation: {event}",
+            source="conversation",
+            metadata=data,
+        )
 
     async def neutralize(self) -> None:
         await self.simulator.neutralize()
