@@ -35,3 +35,22 @@ frontend/dist/
 docs/superpowers/*
 .hermes/
 .superpowers/
+
+# Build / output
+output/
+
+# Reports
+reports/
+
+# Runtime data
+raw-media/
+private-media/
+evidence_snapshots/
+recordings/
+.data/
+
+# Generated contract intermediates
+frontend/src/contracts/domain.schema.json
+
+# Editor / OS
+*.log

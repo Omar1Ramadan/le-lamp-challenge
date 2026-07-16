@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { EvidenceTimeline } from "./EvidenceTimeline";
 import { Inspector } from "./Inspector";
 import { PerceptionPanel } from "./PerceptionPanel";
-import type { EvidenceEvent } from "../contracts/generated";
+import type { EvidenceEvent } from "../state/store";
 
 afterEach(cleanup);
 

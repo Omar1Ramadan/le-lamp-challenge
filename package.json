@@ -6,7 +6,10 @@
     "dev:web": "pnpm --dir frontend dev",
     "test": "pnpm --dir frontend test -- --run",
     "test:web": "pnpm --dir frontend test -- --run",
-    "typecheck:web": "pnpm --dir frontend exec tsc --noEmit",
-    "e2e": "pnpm --dir frontend exec playwright test --config playwright.config.ts"
+    "typecheck:web": "pnpm --dir frontend exec tsc -b",
+    "e2e": "pnpm --dir frontend exec playwright test --config playwright.config.ts",
+    "verify": "bash scripts/verify-all",
+    "verify:contracts": "bash scripts/check-contracts",
+    "contracts:generate": "uv run python tools/export_contract_schemas.py && pnpm --dir frontend exec json2ts -i src/contracts/domain.schema.json -o src/contracts/generated.ts"
   }
 }

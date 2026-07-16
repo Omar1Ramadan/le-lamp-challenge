@@ -18,6 +18,7 @@ import {
 } from "./lib/api";
 import type { VisionStatus } from "./lib/vision";
 import { useDashboardSocket } from "./hooks/useDashboardSocket";
+import type { DashboardState } from "./state/store";
 import { LampScene } from "./scene/LampScene";
 import {
   poseFromTimeline,

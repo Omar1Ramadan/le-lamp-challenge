@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+HAS_ERROR=0
+
+run() {
+  local label="$1"
+  shift
+  printf '\n--- %s ---\n' "$label"
+  if "$@"; then
+    echo "  ✓ $label"
+  else
+    echo "  ✗ $label"
+    HAS_ERROR=1
+  fi
+}
+
+echo '=== Le Lamp Verify All ==='
+echo "Started at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+run '1. Python lint (ruff check)' \
+  uv run ruff check backend tests
+
+run '2. Python format check (ruff format --check)' \
+  uv run ruff format --check backend tests
+
+run '3. Python type check (mypy)' \
+  uv run mypy
+
+run '4. Python tests' \
+  uv run pytest -q
+
+run '5. Frontend lint (oxlint)' \
+  pnpm --dir frontend lint
+
+run '6. Frontend type check (tsc -b)' \
+  pnpm --dir frontend exec tsc -b
+
+run '7. Frontend tests' \
+  pnpm --dir frontend test -- --run
+
+run '8. Frontend build' \
+  pnpm --dir frontend build
+
+run '9. Contract freshness' \
+  scripts/check-contracts
+
+run '10. No git dirty surprises' \
+  git diff --check
+
+echo ''
+if [ "$HAS_ERROR" -eq 0 ]; then
+  echo '=== ALL CHECKS PASSED ==='
+else
+  echo "=== $HAS_ERROR check(s) FAILED ==="
+fi
+exit "$HAS_ERROR"

@@ -117,7 +117,7 @@ export function PerceptionPanel({
     mode: "fallback",
     progress: 0,
   };
-  const calibrationProgress = Math.round(calibration.progress * 100);
+  const calibrationProgress = Math.round((calibration.progress ?? 0) * 100);
   const calibrationPersonLabel =
     calibration.state === "calibrated"
       ? "Calibrated"

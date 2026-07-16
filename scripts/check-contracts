@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+SCHEMA="frontend/src/contracts/domain.schema.json"
+GENERATED="frontend/src/contracts/generated.ts"
+
+# Step 1: export JSON Schema from Pydantic models
+uv run python tools/export_contract_schemas.py
+
+# Step 2: regenerate TypeScript types (json2ts runs in frontend/ context)
+pnpm --dir frontend exec json2ts \
+  -i src/contracts/domain.schema.json \
+  -o src/contracts/generated.ts
+
+# Step 3: diff — any change means contracts are stale
+if ! git diff --exit-code "$SCHEMA" "$GENERATED"; then
+  echo "ERROR: Contract files changed after regeneration. Did you forget to run \`pnpm contracts:generate\`?"
+  echo "       Re-run and commit the updated files."
+  exit 1
+fi
+
+echo "Contracts are fresh (no changes from regeneration)."

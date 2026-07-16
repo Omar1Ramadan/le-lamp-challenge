@@ -30,6 +30,13 @@ export type TimelineId = string;
 export type Component = string;
 export type Detail = string | null;
 export type Status = string;
+export type FailureReason = string | null;
+export type Mode = string;
+export type PersonId = string | null;
+export type Progress = number;
+export type Quality = string;
+export type SampleCount = number;
+export type State = string;
 export type Alternatives = string[];
 export type AnchorName = string | null;
 export type CanonicalLabel = string | null;
@@ -58,7 +65,7 @@ export type WallTimeUtc = string;
 export type EngagementConfidence = number;
 export type EngagementScore = number;
 export type IsActiveSpeaker = boolean;
-export type PersonId = string;
+export type PersonId1 = string;
 export type SocialState = "idle" | "candidate" | "engaged" | "disengaged" | "seeking_attention";
 export type AsOfMonoNs = number;
 export type Health = ComponentHealth[];
@@ -74,6 +81,7 @@ export interface SocialLampContracts {
   AudioMode?: AudioMode;
   BehaviorTimeline?: BehaviorTimeline;
   ComponentHealth?: ComponentHealth;
+  EngagementCalibrationSnapshot?: EngagementCalibrationSnapshot;
   LightKeyframe?: LightKeyframe;
   MemoryResult?: MemoryResult;
   MotionKeyframe?: MotionKeyframe;
@@ -116,6 +124,15 @@ export interface ComponentHealth {
   detail?: Detail;
   status: Status;
 }
+export interface EngagementCalibrationSnapshot {
+  failure_reason?: FailureReason;
+  mode?: Mode;
+  person_id?: PersonId;
+  progress?: Progress;
+  quality?: Quality;
+  sample_count?: SampleCount;
+  state?: State;
+}
 export interface MemoryResult {
   alternatives?: Alternatives;
   anchor_name?: AnchorName;
@@ -155,21 +172,12 @@ export interface PersonState {
   engagement_confidence: EngagementConfidence;
   engagement_score: EngagementScore;
   is_active_speaker?: IsActiveSpeaker;
-  person_id: PersonId;
-}
-export interface EngagementCalibrationSnapshot {
-  failure_reason?: string | null;
-  mode: string;
-  person_id?: string | null;
-  progress: number;
-  quality: string;
-  sample_count: number;
-  state: string;
+  person_id: PersonId1;
 }
 export interface WorldSnapshot {
   as_of_mono_ns: AsOfMonoNs;
   audio_mode: AudioMode;
-  engagement_calibration: EngagementCalibrationSnapshot;
+  engagement_calibration?: EngagementCalibrationSnapshot;
   health: Health;
   objects: Objects;
   people: People;
@@ -179,17 +187,4 @@ export interface WorldSnapshot {
   session_id: SessionId1;
   snapshot_id: SnapshotId;
   social_state: SocialState;
-}
-
-export interface EvidenceEvent {
-  event_id: string;
-  event_type: string;
-  correlation_id?: string | null;
-  occurred_at_mono_ns: number;
-  source: string;
-  summary: string;
-  severity: string;
-  entity_refs: Array<Record<string, unknown>>;
-  evidence_refs: string[];
-  metadata: Record<string, unknown>;
 }

@@ -5,9 +5,7 @@ import {
   initialState,
   reduceServerMessage,
   type ConnectionState,
-  type DashboardState,
   type DashboardWorldSnapshot,
-  type ServerMessage,
 } from "../state/store";
 
 export function useDashboardSocket() {

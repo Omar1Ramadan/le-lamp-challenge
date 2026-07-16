@@ -1,4 +1,5 @@
-import type { EvidenceEvent, MemoryResult } from "../contracts/generated";
+import type { MemoryResult } from "../contracts/generated";
+import type { EvidenceEvent } from "../state/store";
 
 interface EvidenceTimelineProps {
   evidence: MemoryResult[];
