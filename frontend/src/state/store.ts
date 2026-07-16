@@ -7,7 +7,13 @@ import type {
 } from "../contracts/generated";
 import { neutralPose } from "../scene/pose";
 
-export type ConnectionState = "connecting" | "connected" | "offline";
+export type ConnectionState =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected"
+  | "frozen"
+  | "resyncing";
 
 export interface LampStoreSnapshot {
   connection: ConnectionState;
@@ -16,7 +22,7 @@ export interface LampStoreSnapshot {
 }
 
 export const initialLampStore: LampStoreSnapshot = {
-  connection: "offline",
+  connection: "disconnected",
   pose: neutralPose(),
   timeline: null,
 };
