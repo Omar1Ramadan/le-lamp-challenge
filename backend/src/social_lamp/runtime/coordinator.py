@@ -347,15 +347,26 @@ class RuntimeCoordinator:
             await self._publish_snapshot(current)
         prev = self._previous_health_status.get(component)
         if prev is not None and prev != status:
-            severity = "error" if status == "degraded" else ("warning" if status == "disabled" else "info")
+            severity = (
+                "error" if status == "degraded"
+                else "warning" if status == "disabled"
+                else "info"
+            )
             await self._emit_evidence(
                 event_type="fault",
                 summary=f"Health: {component} -> {status}" + (f" ({detail})" if detail else ""),
                 occurred_at_mono_ns=mono_ns or monotonic_ns(),
                 source="runtime",
                 severity=severity,
-                entity_refs=({"kind": "component", "id": component, "label": component},),
-                metadata={"component": component, "status": status, "detail": detail, "previous_status": prev},
+                entity_refs=(
+                    {"kind": "component", "id": component, "label": component},
+                ),
+                metadata={
+                    "component": component,
+                    "status": status,
+                    "detail": detail,
+                    "previous_status": prev,
+                },
             )
         self._previous_health_status[component] = status
 
@@ -391,7 +402,10 @@ class RuntimeCoordinator:
             event_id=str(uuid7()),
             event_type=event_type,
             correlation_id=correlation_id,
-            occurred_at_mono_ns=occurred_at_mono_ns if occurred_at_mono_ns is not None else monotonic_ns(),
+            occurred_at_mono_ns=(
+                occurred_at_mono_ns if occurred_at_mono_ns is not None
+                else monotonic_ns()
+            ),
             source=source,
             summary=summary,
             severity=severity,
@@ -559,7 +573,10 @@ class RuntimeCoordinator:
                 metadata={
                     "status": response.status,
                     "source": response.source,
-                    "tool_calls": [{"name": t.name, "status": t.status} for t in response.tool_calls],
+                    "tool_calls": [
+                        {"name": t.name, "status": t.status}
+                        for t in response.tool_calls
+                    ],
                 },
             )
         return response
@@ -791,14 +808,21 @@ class RuntimeCoordinator:
                 )
                 await self._emit_evidence(
                     event_type="object_memory_created",
-                    summary=f"Memory: {state.label} remembered at {state.horizontal_region or 'unknown'} {state.anchor_name or ''}",
+                    summary=(
+                        f"Memory: {state.label} remembered at "
+                        f"{state.horizontal_region or 'unknown'} {state.anchor_name or ''}"
+                    ),
                     occurred_at_mono_ns=frame.mono_ns,
                     correlation_id=str(previous.session_id),
                     source="vision",
                     severity="info",
                     entity_refs=({"kind": "object", "id": state.track_id, "label": state.label},),
                     evidence_refs=(f"vision-{state.track_id}-{frame.mono_ns}",),
-                    metadata={"horizontal_region": state.horizontal_region, "depth_band": state.depth_band, "anchor_name": state.anchor_name},
+                    metadata={
+                        "horizontal_region": state.horizontal_region,
+                        "depth_band": state.depth_band,
+                        "anchor_name": state.anchor_name,
+                    },
                 )
                 mem.last_recorded_label = state.label
                 mem.last_recorded_region = state.horizontal_region
@@ -875,15 +899,20 @@ class RuntimeCoordinator:
         self.world.replace(current)
         await self._publish_snapshot(current)
 
-        if self._previous_social_state_for_event is not None and social_state != self._previous_social_state_for_event:
+        prev_social = self._previous_social_state_for_event
+        if prev_social is not None and social_state != prev_social:
+            person_entity = (
+                {"kind": "person", "id": primary_person_id, "label": primary_person_id}
+                if primary_person_id else None
+            )
             await self._emit_evidence(
                 event_type="engagement_transition",
-                summary=f"Social state: {self._previous_social_state_for_event.value} -> {social_state.value}",
+                summary=f"Social state: {prev_social.value} -> {social_state.value}",
                 occurred_at_mono_ns=frame.mono_ns,
                 source="runtime",
                 severity="info",
-                entity_refs=( {"kind": "person", "id": primary_person_id or "", "label": primary_person_id or "none"}, ) if primary_person_id else (),
-                metadata={"previous_state": self._previous_social_state_for_event.value, "next_state": social_state.value},
+                entity_refs=(person_entity,) if person_entity else (),
+                metadata={"previous_state": prev_social.value, "next_state": social_state.value},
             )
         self._previous_social_state_for_event = social_state
 
@@ -899,17 +928,30 @@ class RuntimeCoordinator:
             audio_suppressed=current.audio_mode == AudioMode.SPEAKING,
         )
         if decision.intent is not None:
-            correlation_id = str(decision.intent.correlation_id) if decision.intent.correlation_id else None
+            cid = decision.intent.correlation_id
+            correlation_id = str(cid) if cid else None
             if not decision.suppressed:
                 await self._emit_evidence(
                     event_type="behavior_selected",
-                    summary=f"Behavior: {decision.intent.kind} (priority {decision.intent.priority})",
+                    summary=(
+                        f"Behavior: {decision.intent.kind} "
+                        f"(priority {decision.intent.priority})"
+                    ),
                     occurred_at_mono_ns=frame.mono_ns,
                     correlation_id=correlation_id,
                     source="policy",
                     severity="info",
-                    entity_refs=({"kind": "behavior", "id": decision.intent.kind, "label": decision.intent.kind},),
-                    metadata={"priority": decision.intent.priority, "replacement": decision.replacement},
+                    entity_refs=(
+                        {
+                            "kind": "behavior",
+                            "id": decision.intent.kind,
+                            "label": decision.intent.kind,
+                        },
+                    ),
+                    metadata={
+                        "priority": decision.intent.priority,
+                        "replacement": decision.replacement,
+                    },
                 )
                 if decision.replacement is not None:
                     await self._emit_evidence(

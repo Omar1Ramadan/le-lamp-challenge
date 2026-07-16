@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from social_lamp.capture.frames import CapturedFrame
 from social_lamp.domain.contracts import ComponentHealth, SocialState
 from social_lamp.perception.faces import FaceResult
@@ -162,7 +161,8 @@ async def test_fault_event_on_health_transition(tmp_path: Path) -> None:
 
     fault_events = [e for e in captured.events if e["event_type"] == "fault"]
     assert len(fault_events) >= 1
-    assert "degraded" in fault_events[0]["summary"] or "degraded" in str(fault_events[0]["metadata"])
+    event = fault_events[0]
+    assert "degraded" in event["summary"] or "degraded" in str(event["metadata"])
 
 
 @pytest.mark.asyncio
