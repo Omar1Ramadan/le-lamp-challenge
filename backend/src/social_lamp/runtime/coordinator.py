@@ -528,7 +528,28 @@ class RuntimeCoordinator:
         self.replay_messages.append(("memory_result", result.model_dump(mode="json")))
 
     async def submit_text(self, text: str) -> ConversationResponse:
-        return await self.conversation.handle_text(str(uuid7()), text)
+        turn_id = str(uuid7())
+        await self._emit_evidence(
+            event_type="query_received",
+            summary=f"Query: {text[:80]}",
+            source="conversation",
+            metadata={"turn_id": turn_id, "text": text[:200]},
+        )
+        response = await self.conversation.handle_text(turn_id, text)
+        if response.grounded:
+            await self._emit_evidence(
+                event_type="answer_grounded",
+                summary=f"Answer: {response.text[:80]}",
+                source="conversation",
+                severity="info",
+                evidence_refs=response.evidence_ids,
+                metadata={
+                    "status": response.status,
+                    "source": response.source,
+                    "tool_calls": [{"name": t.name, "status": t.status} for t in response.tool_calls],
+                },
+            )
+        return response
 
     async def _emit_conversation_event(self, event: str, data: dict[str, Any]) -> None:
         self.metrics.increment(f"conversation_{event}")

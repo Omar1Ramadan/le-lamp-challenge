@@ -135,3 +135,18 @@ async def test_object_memory_created_via_emit_evidence(tmp_path: Path) -> None:
     memory_events = [e for e in captured.events if e["event_type"] == "object_memory_created"]
     assert len(memory_events) == 1
     assert memory_events[0]["evidence_refs"] == ["obs-1"]
+
+
+@pytest.mark.asyncio
+async def test_query_answer_events(tmp_path: Path) -> None:
+    captured = FakeEvidencePublisher()
+    coordinator = _make_test_coordinator(tmp_path, captured)
+
+    response = await coordinator.submit_text("Where are my keys?")
+
+    events = {e["event_type"] for e in captured.events if e["source"] == "conversation"}
+    assert "query_received" in events or "think" in events
+
+    if response.grounded:
+        grounded = [e for e in captured.events if e["event_type"] == "answer_grounded"]
+        assert len(grounded) >= 1
