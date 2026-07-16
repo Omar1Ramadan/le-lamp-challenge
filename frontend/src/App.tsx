@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 
 import "./App.css";
@@ -9,9 +9,6 @@ import { Inspector, type InspectorEvidence } from "./components/Inspector";
 import { PerceptionPanel } from "./components/PerceptionPanel";
 import {
   cancelEngagementCalibration,
-  getHealth,
-  getReplays,
-  getWorld,
   runReplay,
   startEngagementCalibration,
   startSession,
@@ -20,26 +17,16 @@ import {
   type ReplaySummary,
 } from "./lib/api";
 import type { VisionStatus } from "./lib/vision";
-import { connectSocket, sendAck } from "./lib/socket";
+import { useDashboardSocket } from "./hooks/useDashboardSocket";
 import { LampScene } from "./scene/LampScene";
 import {
-  initialLampStore,
-  initialState,
   poseFromTimeline,
-  reduceServerMessage,
-  type DashboardState,
   type DashboardWorldSnapshot,
   type ServerMessage,
 } from "./state/store";
 
-function dashboardReducer(state: DashboardState, message: ServerMessage) {
-  return reduceServerMessage(state, message);
-}
-
 function App() {
-  const [state, dispatch] = useReducer(dashboardReducer, initialState);
-  const [connection, setConnection] = useState(initialLampStore.connection);
-  const [replays, setReplays] = useState<ReplaySummary[]>([]);
+  const { connection, state, replays, dispatch, sendAck } = useDashboardSocket();
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [lampAction, setLampAction] = useState("Lamp is neutral.");
@@ -47,7 +34,6 @@ function App() {
   const [showEvidence, setShowEvidence] = useState(false);
   const [sessionRunning, setSessionRunning] = useState(true);
   const [visionStatus, setVisionStatus] = useState<VisionStatus | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
   const world = state.world;
   const pose = useMemo(
     () => poseFromTimeline(state.timeline, timelineElapsedMs),
@@ -56,39 +42,15 @@ function App() {
   const evidence = useMemo(() => inspectorEvidence(state.evidence), [state.evidence]);
 
   useEffect(() => {
-    let cancelled = false;
-    void Promise.all([getHealth(), getWorld<DashboardWorldSnapshot>(), getReplays()])
-      .then(([, snapshot, replayList]) => {
-        if (cancelled) {
-          return;
-        }
-        setReplays(replayList);
-        dispatch({ seq: 1, type: "world_snapshot", body: snapshot });
-      })
-      .catch(() => setConnection("offline"));
-
-    const socket = connectSocket((message) => dispatch(message));
-    socketRef.current = socket;
-    socket.onopen = () => setConnection("connected");
-    socket.onclose = () => setConnection("offline");
-    setConnection("connecting");
-    return () => {
-      cancelled = true;
-      socket.close();
-    };
-  }, []);
-
-  useEffect(() => {
     const currentTimeline = state.timeline;
     if (!currentTimeline) {
       setTimelineElapsedMs(0);
       return;
     }
 
-    const socket = socketRef.current;
     const timelineId = currentTimeline.timeline_id;
 
-    if (socket) sendAck(socket, timelineId, "timeline_received");
+    sendAck(timelineId, "timeline_received");
 
     let firstFrameSent = false;
     let completed = false;
@@ -99,11 +61,11 @@ function App() {
       setTimelineElapsedMs(elapsed);
       if (!firstFrameSent) {
         firstFrameSent = true;
-        if (socket) sendAck(socket, timelineId, "first_visible_frame");
+        sendAck(timelineId, "first_visible_frame");
       }
       if (elapsed >= currentTimeline.duration_ms) {
         completed = true;
-        if (socket) sendAck(socket, timelineId, "timeline_complete");
+        sendAck(timelineId, "timeline_complete");
         return;
       }
       animationFrame = window.requestAnimationFrame(tick);
@@ -111,8 +73,8 @@ function App() {
     animationFrame = window.requestAnimationFrame(tick);
     return () => {
       window.cancelAnimationFrame(animationFrame);
-      if (socket && !completed) {
-        sendAck(socket, timelineId, "timeline_cancelled", { reason: "replaced" });
+      if (!completed) {
+        sendAck(timelineId, "timeline_cancelled", { reason: "replaced" });
       }
     };
   }, [state.timeline]);

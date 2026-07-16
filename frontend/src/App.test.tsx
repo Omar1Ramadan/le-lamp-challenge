@@ -108,7 +108,7 @@ describe("App backend integration", () => {
     });
 
     MockSocket.instances[0].emit({
-      seq: 1,
+      seq: 2,
       type: "world_snapshot",
       body: {
         ...world,
@@ -124,7 +124,7 @@ describe("App backend integration", () => {
       },
     });
     MockSocket.instances[0].emit({
-      seq: 2,
+      seq: 3,
       type: "behavior_timeline",
       body: {
         timeline_id: "timeline-1",
@@ -137,7 +137,7 @@ describe("App backend integration", () => {
       },
     });
     MockSocket.instances[0].emit({
-      seq: 3,
+      seq: 4,
       type: "memory_result",
       body: {
         status: "found",
@@ -174,7 +174,7 @@ describe("App backend integration", () => {
 
     await screen.findByRole("button", { name: "Load core journey replay" });
     MockSocket.instances[0].emit({
-      seq: 1,
+      seq: 2,
       type: "world_snapshot",
       body: {
         ...world,
