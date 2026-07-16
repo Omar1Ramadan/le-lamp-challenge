@@ -853,18 +853,50 @@ class RuntimeCoordinator:
             has_visible_person=len(current.people) > 0,
             audio_suppressed=current.audio_mode == AudioMode.SPEAKING,
         )
-        if decision.intent is not None and not decision.suppressed:
-            timeline = self._compositor.compose(decision.intent, self.simulator.pose)
-            await self.simulator.execute(timeline)
-            self._policy.record_active_timeline(decision.intent.kind, str(timeline.timeline_id))
-            sim_health = getattr(self.simulator, "health", None)
-            if isinstance(sim_health, ComponentHealth):
-                current = current.model_copy(
-                    update={"health": _replace_health(current.health, sim_health)}
+        if decision.intent is not None:
+            correlation_id = str(decision.intent.correlation_id) if decision.intent.correlation_id else None
+            if not decision.suppressed:
+                await self._emit_evidence(
+                    event_type="behavior_selected",
+                    summary=f"Behavior: {decision.intent.kind} (priority {decision.intent.priority})",
+                    occurred_at_mono_ns=frame.mono_ns,
+                    correlation_id=correlation_id,
+                    source="policy",
+                    severity="info",
+                    entity_refs=({"kind": "behavior", "id": decision.intent.kind, "label": decision.intent.kind},),
+                    metadata={"priority": decision.intent.priority, "replacement": decision.replacement},
                 )
-                self.world.replace(current)
-                await self._publish_snapshot(current)
-            return timeline
+                if decision.replacement is not None:
+                    await self._emit_evidence(
+                        event_type="behavior_cancelled",
+                        summary=f"Cancelled: {decision.replacement}",
+                        occurred_at_mono_ns=frame.mono_ns,
+                        correlation_id=correlation_id,
+                        source="policy",
+                        severity="warning",
+                        metadata={"replacement": decision.replacement},
+                    )
+                timeline = self._compositor.compose(decision.intent, self.simulator.pose)
+                await self.simulator.execute(timeline)
+                self._policy.record_active_timeline(decision.intent.kind, str(timeline.timeline_id))
+                sim_health = getattr(self.simulator, "health", None)
+                if isinstance(sim_health, ComponentHealth):
+                    current = current.model_copy(
+                        update={"health": _replace_health(current.health, sim_health)}
+                    )
+                    self.world.replace(current)
+                    await self._publish_snapshot(current)
+                return timeline
+            else:
+                await self._emit_evidence(
+                    event_type="behavior_suppressed",
+                    summary=f"Suppressed: {decision.suppression_reason}",
+                    occurred_at_mono_ns=frame.mono_ns,
+                    correlation_id=correlation_id,
+                    source="policy",
+                    severity="info",
+                    metadata={"reason": decision.suppression_reason},
+                )
         return None
 
     def _select_primary_person_id(
