@@ -8,7 +8,7 @@ from typing import Any, Self
 
 import aiosqlite
 
-from social_lamp.domain.contracts import MemoryResult
+from social_lamp.domain.contracts import MemoryResult, ObservationSummary
 
 MIGRATION_PATH = Path(__file__).with_name("migrations") / "001_initial.sql"
 
@@ -356,3 +356,56 @@ class MemoryRepository:
             observed_at_utc=row["observed_at_utc"],
             evidence_ids=(str(row["observation_id"]),),
         )
+
+    async def find_location(
+        self,
+        entity_label: str,
+        *,
+        session_scope: str | None = None,
+    ) -> MemoryResult:
+        return await self.find_last_seen(entity_label, session_scope=session_scope)
+
+    async def list_recent_observations(
+        self,
+        *,
+        limit: int = 10,
+        before_utc: str | None = None,
+    ) -> tuple[ObservationSummary, ...]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if before_utc is not None:
+            clauses.append("observed_at_utc < ?")
+            params.append(before_utc)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        cursor = await self._connection.execute(
+            f"""
+            SELECT observation_id, label, horizontal_region, depth_band,
+                   anchor_name, observed_at_utc
+            FROM observations
+            {where}
+            ORDER BY observed_at_mono_ns DESC
+            LIMIT ?
+            """,
+            (*params, limit),
+        )
+        rows = await cursor.fetchall()
+        results: list[ObservationSummary] = []
+        for row in rows:
+            parts = [str(row["label"])]
+            loc_parts = []
+            if row["horizontal_region"]:
+                loc_parts.append(f"on the {row['horizontal_region']} side")
+            if row["anchor_name"]:
+                loc_parts.append(f"of the {row['anchor_name']}")
+            if loc_parts:
+                parts.append(" ".join(loc_parts))
+            results.append(
+                ObservationSummary(
+                    id=str(row["observation_id"]),
+                    type="object_seen",
+                    summary=" ".join(parts),
+                    observed_at_utc=str(row["observed_at_utc"]),
+                    evidence_ids=(str(row["observation_id"]),),
+                )
+            )
+        return tuple(results)

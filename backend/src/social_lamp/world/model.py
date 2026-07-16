@@ -131,7 +131,14 @@ class WorldModel:
         if update.health_update is not None:
             new_health = _replace_health(new_health, update.health_update)
 
-        if update.active_speaker_id is not None:
+        if update.active_speaker_id is not None and self._snapshot.people:
+            new_people = tuple(
+                person.model_copy(
+                    update={"is_active_speaker": person.person_id == update.active_speaker_id}
+                )
+                for person in self._snapshot.people
+            )
+        elif update.active_speaker_id is not None:
             new_people = (
                 PersonState(
                     person_id=update.active_speaker_id,
@@ -141,7 +148,10 @@ class WorldModel:
                 ),
             )
         else:
-            new_people = self._snapshot.people
+            new_people = tuple(
+                person.model_copy(update={"is_active_speaker": False})
+                for person in self._snapshot.people
+            )
 
         candidate = self._snapshot.model_copy(
             update={

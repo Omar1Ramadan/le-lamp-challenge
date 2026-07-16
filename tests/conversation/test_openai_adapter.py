@@ -2,7 +2,7 @@ import pytest
 from social_lamp.config import Settings
 from social_lamp.conversation.openai_realtime import OpenAIRealtimeProvider
 from social_lamp.conversation.template import TemplateConversationProvider
-from social_lamp.domain.contracts import MemoryResult
+from social_lamp.domain.contracts import MemoryResult, ObservationSummary
 from social_lamp.runtime.providers import build_conversation_provider
 
 
@@ -35,6 +35,39 @@ class FakeOpenAIClient:
         self.closed_reason = reason
 
 
+class _FakeMemory:
+    def __init__(self, result: MemoryResult) -> None:
+        self._result = result
+
+    async def find_last_seen(
+        self,
+        object_label: str,
+        *,
+        session_scope: str | None = None,
+        before_utc: str | None = None,
+    ) -> MemoryResult:
+        del object_label, session_scope, before_utc
+        return self._result
+
+    async def find_location(
+        self,
+        entity_label: str,
+        *,
+        session_scope: str | None = None,
+    ) -> MemoryResult:
+        del entity_label, session_scope
+        return self._result
+
+    async def list_recent_observations(
+        self,
+        *,
+        limit: int = 10,
+        before_utc: str | None = None,
+    ) -> tuple[ObservationSummary, ...]:
+        del limit, before_utc
+        return ()
+
+
 @pytest.fixture
 def fake_openai_client() -> FakeOpenAIClient:
     return FakeOpenAIClient()
@@ -56,7 +89,11 @@ async def test_ungrounded_cloud_answer_is_replaced_by_template(
     fake_openai_client: FakeOpenAIClient,
 ) -> None:
     fake_openai_client.answer = "The keys are on the shelf."
-    provider = OpenAIRealtimeProvider(client=fake_openai_client, model="test-model")
+    provider = OpenAIRealtimeProvider(
+        client=fake_openai_client,
+        model="test-model",
+        memory=_FakeMemory(fake_openai_client.not_found_result),
+    )
     response = await provider.handle_grounded_turn(
         turn_id="turn-1",
         text="Where are my keys?",
@@ -64,6 +101,7 @@ async def test_ungrounded_cloud_answer_is_replaced_by_template(
     )
     assert response.status == "not_found"
     assert "do not have reliable evidence" in response.text
+    assert not response.grounded
 
 
 @pytest.mark.asyncio
@@ -78,14 +116,19 @@ async def test_grounded_cloud_answer_is_kept(fake_openai_client: FakeOpenAIClien
         evidence_ids=tuple(str(index) for index in range(12)),
     )
     fake_openai_client.answer = "I last saw the keys on the right side of the desk."
-    provider = OpenAIRealtimeProvider(client=fake_openai_client, model="test-model")
+    provider = OpenAIRealtimeProvider(
+        client=fake_openai_client,
+        model="test-model",
+        memory=_FakeMemory(evidence),
+    )
     response = await provider.handle_grounded_turn(
         turn_id="turn-2",
         text="Where are my keys?",
         evidence_result=evidence,
     )
     assert response.status == "found"
-    assert response.evidence_ids == tuple(str(index) for index in range(10))
+    assert response.grounded
+    assert response.source == "openai"
 
 
 @pytest.mark.asyncio

@@ -180,7 +180,31 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
                 "body": {"name": f"recall_{response.status}", "value": 1},
             }
         )
-        return {"ok": True, "response": response.__dict__}
+        if response.grounded:
+            await hub.broadcast(
+                {
+                    "type": "metric",
+                    "body": {
+                        "name": "conversation_grounded",
+                        "value": 1,
+                        "labels": {"source": response.source},
+                    },
+                }
+            )
+        return {
+            "ok": True,
+            "response": {
+                "text": response.text,
+                "status": response.status,
+                "grounded": response.grounded,
+                "source": response.source,
+                "evidence_ids": list(response.evidence_ids),
+                "tool_calls": [
+                    {"name": t.name, "status": t.status, "evidence_ids": list(t.evidence_ids)}
+                    for t in response.tool_calls
+                ],
+            },
+        }
 
     @app.get("/api/calibration/engagement")
     async def engagement_calibration(request: Request) -> dict[str, object]:

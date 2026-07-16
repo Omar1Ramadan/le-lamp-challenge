@@ -25,16 +25,53 @@ def test_television_suppresses_unsolicited_sound() -> None:
     state = analyzer.push(VoiceFrame(True, AudioClass.TELEVISION_MEDIA, 0.85))
     assert state.suppress_unsolicited_sound
     assert state.speaker_id is None
+    assert not state.speech_active
 
 
 def test_speech_during_simulator_audio_cancels_and_listens() -> None:
     interruption = SimulatorSpeechInterruption()
     analyzer = AudioAnalyzer(frame_ms=20, interruption=interruption)
     analyzer.set_simulator_speaking(True)
-    state = analyzer.push(VoiceFrame(True, AudioClass.DIRECT_SPEECH, 0.95, speaker_id="person-1"))
+    for _ in range(12):
+        state = analyzer.push(
+            VoiceFrame(True, AudioClass.DIRECT_SPEECH, 0.95, speaker_id="person-1")
+        )
+        assert not interruption.cancelled
+    state = analyzer.push(
+        VoiceFrame(True, AudioClass.DIRECT_SPEECH, 0.95, speaker_id="person-1")
+    )
     assert state.listen_priority == 90
     assert interruption.cancelled
     assert interruption.reason == "human speech interrupted simulator audio"
+
+
+def test_short_speech_during_simulator_audio_does_not_interrupt() -> None:
+    interruption = SimulatorSpeechInterruption()
+    analyzer = AudioAnalyzer(frame_ms=20, interruption=interruption)
+    analyzer.set_simulator_speaking(True)
+
+    for _ in range(12):
+        state = analyzer.push(VoiceFrame(True, AudioClass.DIRECT_SPEECH, 0.95))
+
+    assert state.listen_priority is None
+    assert not interruption.cancelled
+
+
+def test_interruption_cooldown_prevents_repeated_cancellation() -> None:
+    interruption = SimulatorSpeechInterruption()
+    analyzer = AudioAnalyzer(frame_ms=20, interruption=interruption)
+    analyzer.set_simulator_speaking(True)
+    for _ in range(13):
+        analyzer.push(VoiceFrame(True, AudioClass.DIRECT_SPEECH, 0.95))
+    assert interruption.cancelled
+
+    interruption.cancelled = False
+    analyzer.set_simulator_speaking(True)
+    for _ in range(13):
+        state = analyzer.push(VoiceFrame(True, AudioClass.DIRECT_SPEECH, 0.95))
+
+    assert state.listen_priority is None
+    assert not interruption.cancelled
 
 
 def test_anonymous_speaker_below_threshold_is_uncertain() -> None:

@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from collections.abc import Awaitable, Callable, Coroutine
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic_ns
-from typing import Protocol
+from typing import Any, Protocol
 
 from uuid6 import uuid7
 
@@ -26,6 +26,7 @@ from social_lamp.domain.contracts import (
     MemoryQuery,
     MemoryResult,
     ObjectState,
+    ObservationSummary,
     PersonState,
     SocialState,
     WorldSnapshot,
@@ -119,6 +120,20 @@ class MemoryPort(Protocol):
         before_utc: str | None = None,
     ) -> MemoryResult: ...
 
+    async def find_location(
+        self,
+        entity_label: str,
+        *,
+        session_scope: str | None = None,
+    ) -> MemoryResult: ...
+
+    async def list_recent_observations(
+        self,
+        *,
+        limit: int = 10,
+        before_utc: str | None = None,
+    ) -> tuple[ObservationSummary, ...]: ...
+
     async def clear(self) -> None: ...
 
     async def record(self, observation: ObservationWrite) -> str: ...
@@ -148,7 +163,9 @@ class RuntimeCoordinator:
         self.simulator = simulator
         self.metrics = metrics
         self.memory = memory
-        self.conversation = conversation or TemplateConversationProvider(self._query_memory)
+        self.conversation = conversation or TemplateConversationProvider(
+            self.memory, event_emitter=self._emit_conversation_event
+        )
         self._policy = policy or BehaviorPolicy()
         self._compositor = compositor or BehaviorCompositor()
         self._running = False
@@ -198,7 +215,7 @@ class RuntimeCoordinator:
         snapshot = self.world.snapshot
         status = self._engagement_calibration.start_calibration(
             snapshot.primary_person_id,
-            mono_ns if mono_ns is not None else snapshot.as_of_mono_ns,
+            mono_ns if mono_ns is not None else monotonic_ns(),
         )
         return self._set_engagement_calibration_status(status)
 
@@ -409,10 +426,17 @@ class RuntimeCoordinator:
             if current.revision == previous.revision:
                 previous = current
                 continue
-            intent = self._policy.on_transition(previous, current)
-            if intent is not None:
-                timeline = self._compositor.compose(intent, self.simulator.pose)
+            # replay fixtures may omit people/audio data; assume visible and not suppressed
+            decision = self._policy.evaluate(
+                current,
+                previous.social_state,
+                has_visible_person=True,
+                audio_suppressed=False,
+            )
+            if decision.intent is not None and not decision.suppressed:
+                timeline = self._compositor.compose(decision.intent, self.simulator.pose)
                 await self.simulator.execute(timeline)
+                self._policy.record_active_timeline(decision.intent.kind, str(timeline.timeline_id))
                 self.replay_messages.append(("behavior_timeline", timeline.model_dump(mode="json")))
                 health = getattr(self.simulator, "health", None)
                 if isinstance(health, ComponentHealth):
@@ -472,6 +496,16 @@ class RuntimeCoordinator:
     async def submit_text(self, text: str) -> ConversationResponse:
         return await self.conversation.handle_text(str(uuid7()), text)
 
+    async def _emit_conversation_event(self, event: str, data: dict[str, Any]) -> None:
+        self.metrics.increment(f"conversation_{event}")
+        if self._snapshot_publisher is not None:
+            await self._snapshot_publisher(
+                {
+                    "type": "conversation_event",
+                    "body": {"event": event, **data},
+                }
+            )
+
     async def neutralize(self) -> None:
         await self.simulator.neutralize()
 
@@ -490,7 +524,16 @@ class RuntimeCoordinator:
         except Exception as exc:
             await self._set_health("microphone", "degraded", str(exc), mono_ns=chunk.mono_ns)
             return
+        if frame.audio_class.name == "DIRECT_SPEECH" and frame.speaker_id is None:
+            inferred_speaker = self._infer_active_speaker_id()
+            if inferred_speaker is not None:
+                frame = replace(frame, speaker_id=inferred_speaker)
         self.audio_state = self._audio_analyzer.push(frame)
+        vad_health = ComponentHealth(
+            component="vad",
+            status=self.audio_state.vad_state,
+            detail=self.audio_state.suppression_reason,
+        )
         update = AudioUpdate(
             audio_mode=AudioMode.LISTENING if self.audio_state.speech_active else AudioMode.SILENT,
             as_of_mono_ns=chunk.mono_ns,
@@ -498,8 +541,53 @@ class RuntimeCoordinator:
             health_update=ComponentHealth(component="microphone", status="ok"),
         )
         current = self.world.apply_audio(update)
+        current = self.world.apply_health(
+            HealthUpdate(
+                component=vad_health.component,
+                status=vad_health.status,
+                detail=vad_health.detail,
+                as_of_mono_ns=chunk.mono_ns,
+            )
+        ) or current
+        self._record_audio_event(frame, chunk.mono_ns)
         if current is not None:
             await self._publish_snapshot(current)
+
+    def _infer_active_speaker_id(self) -> str | None:
+        snapshot = self.world.snapshot
+        if len(snapshot.people) == 1:
+            return snapshot.people[0].person_id
+        if snapshot.primary_person_id is not None:
+            return snapshot.primary_person_id
+        return None
+
+    def _record_audio_event(self, frame: object, mono_ns: int) -> None:
+        audio_class = getattr(frame, "audio_class", None)
+        confidence = float(getattr(frame, "confidence", 0.0))
+        speaker_id = getattr(frame, "speaker_id", None)
+        if self.audio_state.suppression_reason == "background_media":
+            kind = "background_media_suppressed"
+        elif self.audio_state.listen_priority is not None:
+            kind = "lamp_audio_interrupted"
+        elif self.audio_state.speech_active:
+            kind = "speech_detected"
+        else:
+            kind = "speech_ended"
+        self.replay_messages.append(
+            (
+                "audio_event",
+                {
+                    "kind": kind,
+                    "correlation_id": str(uuid7()),
+                    "audio_source": "microphone",
+                    "captured_at_mono_ns": mono_ns,
+                    "confidence": confidence,
+                    "audio_class": str(audio_class.value if audio_class is not None else "unknown"),
+                    "active_person_id": speaker_id,
+                    "suppression_reason": self.audio_state.suppression_reason,
+                },
+            )
+        )
 
     async def process_vision_frame(
         self,
@@ -617,7 +705,7 @@ class RuntimeCoordinator:
             objects.append(state)
 
             mem = self._object_memory_state.setdefault(track_id, ObjectMemoryState())
-            decision, reason = should_record_object_observation(
+            should_record, reason = should_record_object_observation(
                 mem,
                 state.label,
                 state.horizontal_region,
@@ -625,7 +713,7 @@ class RuntimeCoordinator:
                 state.anchor_name,
                 frame.mono_ns,
             )
-            if decision:
+            if should_record:
                 await self.memory.record(
                     _observation_write(
                         state=state,
@@ -709,19 +797,30 @@ class RuntimeCoordinator:
         self.world.replace(current)
         await self._publish_snapshot(current)
 
-        intent = self._policy.on_transition(previous, current)
-        if intent is None:
-            return None
-        timeline = self._compositor.compose(intent, self.simulator.pose)
-        await self.simulator.execute(timeline)
-        sim_health = getattr(self.simulator, "health", None)
-        if isinstance(sim_health, ComponentHealth):
-            current = current.model_copy(
-                update={"health": _replace_health(current.health, sim_health)}
-            )
-            self.world.replace(current)
-            await self._publish_snapshot(current)
-        return timeline
+        if current.people:
+            self._policy.clear_idle_timer()
+        elif self._policy.idle_since_ns is None:
+            self._policy.reset_idle_timer(frame.mono_ns)
+
+        decision = self._policy.evaluate(
+            current,
+            previous.social_state,
+            has_visible_person=len(current.people) > 0,
+            audio_suppressed=current.audio_mode == AudioMode.SPEAKING,
+        )
+        if decision.intent is not None and not decision.suppressed:
+            timeline = self._compositor.compose(decision.intent, self.simulator.pose)
+            await self.simulator.execute(timeline)
+            self._policy.record_active_timeline(decision.intent.kind, str(timeline.timeline_id))
+            sim_health = getattr(self.simulator, "health", None)
+            if isinstance(sim_health, ComponentHealth):
+                current = current.model_copy(
+                    update={"health": _replace_health(current.health, sim_health)}
+                )
+                self.world.replace(current)
+                await self._publish_snapshot(current)
+            return timeline
+        return None
 
     def _select_primary_person_id(
         self, visible_tracks: list[PersonTrack], engagement_scores: dict[str, float]

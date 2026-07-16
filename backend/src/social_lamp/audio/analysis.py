@@ -30,6 +30,8 @@ class AudioState:
     suppress_unsolicited_sound: bool
     speaker_id: str | None
     listen_priority: int | None = None
+    vad_state: str = "silent"
+    suppression_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -80,12 +82,16 @@ class AudioAnalyzer:
         self._active = False
         self._simulator_speaking = False
         self._interruption = interruption
+        self._cooldown_ms = 0
 
     def set_simulator_speaking(self, speaking: bool) -> None:
         self._simulator_speaking = speaking
 
     def push(self, frame: VoiceFrame) -> AudioState:
-        if frame.voiced:
+        direct_speech = frame.voiced and frame.audio_class is AudioClass.DIRECT_SPEECH
+        media = frame.audio_class in {AudioClass.TELEVISION_MEDIA, AudioClass.MUSIC}
+        self._cooldown_ms = max(0, self._cooldown_ms - self._frame_ms)
+        if direct_speech:
             self._voiced_ms += self._frame_ms
             self._silence_ms = 0
             self._active = self._active or self._voiced_ms >= 120
@@ -94,21 +100,40 @@ class AudioAnalyzer:
             if self._silence_ms >= 500:
                 self._active = False
                 self._voiced_ms = 0
-        media = frame.audio_class in {AudioClass.TELEVISION_MEDIA, AudioClass.MUSIC}
         speaker = frame.speaker_id if frame.audio_class is AudioClass.DIRECT_SPEECH else None
         listen_priority: int | None = None
         interrupted_simulator = (
             self._simulator_speaking
-            and frame.voiced
-            and frame.audio_class is AudioClass.DIRECT_SPEECH
+            and direct_speech
+            and frame.confidence >= 0.7
+            and self._voiced_ms >= 250
+            and self._cooldown_ms == 0
         )
         if interrupted_simulator:
             listen_priority = 90
             if self._interruption is not None:
                 self._interruption.cancel("human speech interrupted simulator audio")
             self._simulator_speaking = False
+            self._cooldown_ms = 1_000
         suppress_unsolicited_sound = media and frame.confidence >= 0.65
-        return AudioState(self._active, suppress_unsolicited_sound, speaker, listen_priority)
+        vad_state = (
+            "background_media"
+            if suppress_unsolicited_sound
+            else "speech"
+            if self._active
+            else "noise"
+            if frame.voiced
+            else "silent"
+        )
+        suppression_reason = "background_media" if suppress_unsolicited_sound else None
+        return AudioState(
+            self._active,
+            suppress_unsolicited_sound,
+            speaker,
+            listen_priority,
+            vad_state,
+            suppression_reason,
+        )
 
 
 class ActiveSpeakerScorer:

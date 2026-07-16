@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
+
+from social_lamp.domain.contracts import ToolCallRecord
 
 
 @dataclass(frozen=True)
@@ -8,6 +10,9 @@ class ConversationResponse:
     text: str
     evidence_ids: tuple[str, ...]
     status: str
+    grounded: bool = False
+    source: str = "template"
+    tool_calls: tuple[ToolCallRecord, ...] = field(default_factory=tuple)
 
 
 class ConversationProvider(Protocol):

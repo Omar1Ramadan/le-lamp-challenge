@@ -30,6 +30,9 @@
 - Person identity is session-only. The system should not claim durable identity across restarts or separate sessions.
 - Person IDs are anonymous runtime labels only. They are not face recognition IDs and must not be interpreted as real identity.
 - Active-speaker association is probabilistic and may be anonymous when visual/audio evidence is insufficient.
+- Without directional audio or mouth-motion correlation, active-speaker association uses conservative heuristics: a single visible person or the current primary person. Multi-person cases can still be ambiguous.
+- Background-media suppression is best-effort. Television or music can still be misclassified in unusual acoustic conditions, but confident media-like audio should not activate listening or interrupt lamp playback.
+- User interruptions require sustained direct speech above threshold and use cooldowns to prevent repeated cancellation spam.
 - Affect evidence is coarse, bounded, and confidence-gated; it is not an emotion detector.
 
 ## Conversation

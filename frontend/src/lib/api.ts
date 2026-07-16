@@ -8,7 +8,11 @@ interface ReplayResponse {
   messages?: unknown[];
 }
 
-const API_BASE = window.location.port === "5173" ? "http://127.0.0.1:8000" : "";
+export function apiBaseForPort(port: string): string {
+  return port === "5173" ? "http://127.0.0.1:8000" : "";
+}
+
+const API_BASE = apiBaseForPort(window.location.port);
 
 export async function getHealth(): Promise<{ status: string }> {
   return fetchJson("/api/health");
@@ -47,6 +51,14 @@ export async function startSession(): Promise<{ ok: boolean; running: boolean }>
 
 export async function stopSession(): Promise<{ ok: boolean; running: boolean }> {
   return fetchJson("/api/session/stop", { method: "POST" });
+}
+
+export async function startEngagementCalibration<T>(): Promise<T> {
+  return fetchJson<T>("/api/calibration/engagement/start", { method: "POST" });
+}
+
+export async function cancelEngagementCalibration<T>(): Promise<T> {
+  return fetchJson<T>("/api/calibration/engagement/cancel", { method: "POST" });
 }
 
 import type { VisionStatus } from "./vision";

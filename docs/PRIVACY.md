@@ -48,6 +48,10 @@ This clears the local evidence memory used for recall. For a complete privacy re
 
 Offline replay uses deterministic fixtures and the template conversation provider. It does not require webcam, microphone, cloud APIs, or network access after dependencies are installed. In offline mode the lamp can still replay behavior, form sample memory evidence, answer text recall from evidence, and produce reports.
 
+## Audio processing
+
+Microphone chunks are processed in bounded memory and are not stored by default. Runtime state keeps only derived status such as VAD state, active anonymous speaker ID, suppression reason, timestamps, and correlation IDs. Active-speaker labels are session-local heuristics and must not be treated as identity recognition.
+
 ## Cloud provider
 
 Cloud conversation is optional. Leave `CONVERSATION_PROVIDER=template` and `ENABLE_CLOUD_CONVERSATION=false` for private or offline demos. If cloud conversation is enabled, keep API keys only in `.env` and validate every factual response against memory evidence before displaying it.

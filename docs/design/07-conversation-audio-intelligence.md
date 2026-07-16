@@ -51,17 +51,17 @@ Tools return the `MemoryResult` contract. There is no arbitrary SQL, filesystem,
 
 Audio is processed in 20 ms chunks. Voice activity starts after 120 ms of speech probability above threshold and ends after 500 ms of silence. Thresholds are configurable and captured in replay manifests.
 
-Speech detected while lamp audio is playing immediately calls `interrupt`, cancels adapter audio, sets `audio_mode=listening`, and suppresses new speech until the provider confirms cancellation. Partial transcripts and interruption timestamps remain in the trace.
+Speech detected while lamp audio is playing calls `interrupt` after at least 250 ms of direct speech above confidence threshold, cancels adapter audio, sets `audio_mode=listening`, and applies a 1,000 ms interruption cooldown to prevent cancellation spam. Partial transcripts and interruption timestamps remain in the trace.
 
 ## Background-Media Suppression
 
-An audio classifier estimates `direct_speech`, `conversation_background`, `television_media`, `music`, or `other`. Visual speaker association and current engagement modify confidence. Confident television/media blocks unsolicited lamp sound and lowers unassociated speech confidence. It does not prevent explicit typed queries.
+An audio classifier estimates `direct_speech`, `conversation_background`, `television_media`, `music`, or `other`. Visual speaker association and current engagement modify confidence. Confident television/media blocks unsolicited lamp sound, updates VAD status as `background_media`, and does not activate listening. It does not prevent explicit typed queries.
 
 False certainty is avoided: when source classification is weak, the world model reports `unknown` and the policy chooses the quieter behavior.
 
 ## Multi-User Speaker Association
 
-The subsystem correlates speech energy with mouth motion on visible anonymous person tracks. A speaker assignment requires confidence at least `0.65`; otherwise `speaker_id=null`. Named identity is never inferred or persisted. Conversation context may use Person A/B labels only within the session.
+The subsystem prefers explicit classifier `speaker_id` values when available. Without directional audio, one visible person is marked as active speaker; with multiple visible people, the current primary person may be used as a heuristic. Named identity is never inferred or persisted. Conversation context may use Person A/B labels only within the session.
 
 ## Coarse Vocal Affect Bonus
 

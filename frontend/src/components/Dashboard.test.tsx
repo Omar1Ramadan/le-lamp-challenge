@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Inspector } from "./Inspector";
 import { PerceptionPanel } from "./PerceptionPanel";
 
@@ -16,8 +16,28 @@ describe("Inspector", () => {
       />,
     );
     expect(screen.getByText("keys")).toBeVisible();
-    expect(screen.getByText(/degraded/i)).toBeVisible();
+    expect(screen.getAllByText(/degraded/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/offline fallback/i)).toBeVisible();
+  });
+
+  it("shows explicit microphone vad cloud and lamp audio status", () => {
+    render(
+      <Inspector
+        state="engaged"
+        audioMode="listening"
+        evidence={[]}
+        health={[
+          { component: "microphone", status: "ok" },
+          { component: "vad", status: "background_media", detail: "background_media" },
+          { component: "cloud", status: "disabled", detail: "template provider" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/Microphone: ok/i)).toBeVisible();
+    expect(screen.getByText(/VAD: background_media/i)).toBeVisible();
+    expect(screen.getByText(/Cloud: disabled/i)).toBeVisible();
+    expect(screen.getByText(/Lamp audio: listening/i)).toBeVisible();
   });
 });
 
@@ -141,12 +161,29 @@ describe("PerceptionPanel", () => {
     expect(screen.getByText(/person-2/i)).not.toHaveTextContent(/primary/i);
   });
 
+  it("labels the active speaker", () => {
+    render(
+      <PerceptionPanel
+        people={[
+          { person_id: "person-1", engagement_score: 0.8, engagement_confidence: 0.9, is_active_speaker: true },
+        ]}
+        primaryPersonId="person-1"
+        objects={[]}
+        health={[]}
+      />,
+    );
+
+    expect(screen.getByText(/person-1/i)).toHaveTextContent(/active speaker/i);
+  });
+
   it("shows engagement calibration state and controls", () => {
+    const onStartEngagementCalibration = vi.fn();
     render(
       <PerceptionPanel
         people={[]}
         objects={[]}
         health={[]}
+        onStartEngagementCalibration={onStartEngagementCalibration}
         engagementCalibration={{
           state: "uncalibrated",
           person_id: null,
@@ -161,6 +198,54 @@ describe("PerceptionPanel", () => {
 
     expect(screen.getByText(/calibration: uncalibrated/i)).toBeVisible();
     expect(screen.getByText(/mode: fallback/i)).toBeVisible();
-    expect(screen.getByRole("button", { name: /start calibration/i })).toBeVisible();
+    screen.getByRole("button", { name: /start calibration/i }).click();
+    expect(onStartEngagementCalibration).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends cancellation through the calibration callback", () => {
+    const onCancelEngagementCalibration = vi.fn();
+    render(
+      <PerceptionPanel
+        people={[]}
+        objects={[]}
+        health={[]}
+        onCancelEngagementCalibration={onCancelEngagementCalibration}
+        engagementCalibration={{
+          state: "calibrating",
+          person_id: "person-1",
+          sample_count: 12,
+          quality: "limited",
+          failure_reason: null,
+          mode: "fallback",
+          progress: 0.5,
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/progress: 50%/i)).toBeVisible();
+    screen.getByRole("button", { name: /cancel calibration/i }).click();
+    expect(onCancelEngagementCalibration).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not label a failed calibration as calibrated", () => {
+    render(
+      <PerceptionPanel
+        people={[]}
+        objects={[]}
+        health={[]}
+        engagementCalibration={{
+          state: "failed",
+          person_id: "person-1",
+          sample_count: 0,
+          quality: "failed",
+          failure_reason: "not enough valid samples",
+          mode: "fallback",
+          progress: 0,
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/person: person-1/i)).toBeVisible();
+    expect(screen.queryByText(/calibrated: person-1/i)).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import social_lamp.runtime.coordinator as coordinator_module
 from social_lamp.capture.frames import CapturedFrame, LatestFrameBuffer
 from social_lamp.domain.clock import FakeClock
 from social_lamp.domain.contracts import ComponentHealth, ObjectState, PersonState
@@ -999,6 +1000,45 @@ async def test_runtime_calibration_completes_from_vision_frames(tmp_path: Path) 
         assert status.state == "calibrated"
         assert coordinator.world.snapshot.engagement_calibration.state == "calibrated"
         assert coordinator.world.snapshot.engagement_calibration.person_id == "person-1"
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+async def test_runtime_calibration_start_uses_current_time_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coordinator = RuntimeCoordinator.for_test(database=tmp_path / "memory.db")
+    try:
+        monkeypatch.setattr(coordinator_module, "monotonic_ns", lambda: 10_000_000_000)
+        coordinator.start_engagement_calibration()
+        await coordinator.process_vision_frame(
+            CapturedFrame(
+                np.zeros((4, 4, 3), dtype=np.uint8),
+                mono_ns=10_100_000_000,
+            ),
+            face_processor=FakeFaceProcessor(
+                (
+                    FaceResult(
+                        face_confidence=0.92,
+                        yaw_degrees=12.0,
+                        pitch_degrees=6.0,
+                        roll_degrees=1.0,
+                        gaze_score=0.7,
+                        gaze_quality=0.9,
+                        face_area_ratio=0.2,
+                        pose_source="mediapipe_matrix",
+                        pose_quality=0.95,
+                    ),
+                )
+            ),
+            object_detector=FakeObjectDetector(),
+            anchors={},
+        )
+
+        status = coordinator.engagement_calibration_status(mono_ns=10_100_000_000)
+        assert status.state == "calibrating"
+        assert status.sample_count == 1
     finally:
         await coordinator.stop()
 

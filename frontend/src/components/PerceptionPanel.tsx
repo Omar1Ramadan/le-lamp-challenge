@@ -20,6 +20,8 @@ interface PerceptionPanelProps {
   visionStatus?: VisionStatus | null;
   primaryPersonId?: string | null;
   engagementCalibration?: EngagementCalibrationSnapshot | null;
+  onStartEngagementCalibration?: () => void;
+  onCancelEngagementCalibration?: () => void;
 }
 
 function StatusBadge({ status, detail }: { status: string; detail?: string | null }) {
@@ -56,10 +58,6 @@ function DetectorLine({
   );
 }
 
-async function postCalibration(path: string) {
-  await fetch(path, { method: "POST" });
-}
-
 export function PerceptionPanel({
   people,
   objects,
@@ -67,6 +65,8 @@ export function PerceptionPanel({
   visionStatus,
   primaryPersonId,
   engagementCalibration,
+  onStartEngagementCalibration,
+  onCancelEngagementCalibration,
 }: PerceptionPanelProps) {
   const faceHealth = health.find((h) => h.component === "face_detector");
   const objectHealth = health.find((h) => h.component === "object_detector");
@@ -118,6 +118,12 @@ export function PerceptionPanel({
     progress: 0,
   };
   const calibrationProgress = Math.round(calibration.progress * 100);
+  const calibrationPersonLabel =
+    calibration.state === "calibrated"
+      ? "Calibrated"
+      : calibration.state === "calibrating"
+        ? "Calibrating"
+        : "Person";
 
   return (
     <section className="panel" aria-label="Perception state">
@@ -148,19 +154,19 @@ export function PerceptionPanel({
         <p>Calibration: {calibration.state}</p>
         <p>Mode: {calibration.mode}</p>
         {calibration.state === "calibrating" ? <p>Progress: {calibrationProgress}%</p> : null}
-        {calibration.person_id ? <p>Calibrated: {calibration.person_id}</p> : null}
+        {calibration.person_id ? <p>{calibrationPersonLabel}: {calibration.person_id}</p> : null}
         {calibration.failure_reason ? <p className="status-detail">{calibration.failure_reason}</p> : null}
         {calibration.state === "calibrating" ? (
           <button
             type="button"
-            onClick={() => postCalibration("/api/calibration/engagement/cancel")}
+            onClick={onCancelEngagementCalibration}
           >
             Cancel calibration
           </button>
         ) : (
           <button
             type="button"
-            onClick={() => postCalibration("/api/calibration/engagement/start")}
+            onClick={onStartEngagementCalibration}
           >
             {calibration.state === "calibrated" ? "Recalibrate" : "Start calibration"}
           </button>
@@ -180,6 +186,7 @@ export function PerceptionPanel({
               {person.person_id}
               {isPrimary ? <strong> (primary)</strong> : null} · engagement {Math.round(person.engagement_score * 100)}% ·
               confidence {Math.round(person.engagement_confidence * 100)}%
+              {person.is_active_speaker ? " · active speaker" : ""}
             </li>
           );
         })}

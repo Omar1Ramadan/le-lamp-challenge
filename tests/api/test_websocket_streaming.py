@@ -40,17 +40,18 @@ def test_simulator_acknowledgements_are_recorded(tmp_path: Path) -> None:
             timeline = socket.receive_json()
             timeline_id = timeline["body"]["timeline_id"]
 
-            for stage in ("received", "rendered", "completed"):
+            for ack_type in ("timeline_received", "first_visible_frame", "timeline_complete"):
                 socket.send_json(
                     {
                         "type": "simulator_ack",
-                        "body": {"timeline_id": timeline_id, "stage": stage},
+                        "body": {"timeline_id": timeline_id, "ack_type": ack_type},
                     }
                 )
 
+            expected_acks = ["timeline_received", "first_visible_frame", "timeline_complete"]
             assert client.get(f"/api/simulator/timelines/{timeline_id}").json() == {
                 "timeline_id": timeline_id,
-                "acknowledgements": ["received", "rendered", "completed"],
+                "acknowledgements": expected_acks,
             }
 
 

@@ -18,6 +18,12 @@ interface InspectorProps {
 }
 
 export function Inspector({ state, audioMode, evidence, health }: InspectorProps) {
+  const statusFor = (component: string, fallback: string) =>
+    health.find((item) => item.component === component)?.status ?? fallback;
+  const microphoneStatus = statusFor("microphone", "off");
+  const vadStatus = statusFor("vad", "silent");
+  const cloudStatus = statusFor("cloud", "fallback");
+
   return (
     <aside className="panel inspector" aria-label="Evidence inspector">
       <h2>Inspector</h2>
@@ -27,6 +33,13 @@ export function Inspector({ state, audioMode, evidence, health }: InspectorProps
       <p>
         Audio mode: <strong>{audioMode}</strong>
       </p>
+      <section aria-label="Audio status">
+        <h3>Audio status</h3>
+        <p>Microphone: {microphoneStatus}</p>
+        <p>VAD: {vadStatus}</p>
+        <p>Lamp audio: {audioMode}</p>
+        <p>Cloud: {cloudStatus}</p>
+      </section>
       <section aria-label="Evidence">
         <h3>Evidence</h3>
         {evidence.length === 0 ? (

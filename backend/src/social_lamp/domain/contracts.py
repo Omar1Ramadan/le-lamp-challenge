@@ -152,11 +152,23 @@ class BehaviorIntent(FrozenModel):
     correlation_id: UUID
     session_id: UUID
     kind: str
-    urgency: int = Field(ge=0, le=100)
+    priority: int = Field(ge=0, le=100)
     created_at_mono_ns: int = Field(ge=0)
     expires_at_mono_ns: int = Field(ge=0)
     target_person_id: str | None = None
+    cancellable: bool = True
+    replace_policy: str = "replace_lower_priority"
+    suppression_reason: str | None = None
+    source_event_ids: tuple[str, ...] = ()
     parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class BehaviorDecision(FrozenModel):
+    intent: BehaviorIntent | None = None
+    suppressed: bool = False
+    suppression_reason: str | None = None
+    active_timeline_id: str | None = None
+    replacement: str | None = None
 
 
 class MotionKeyframe(FrozenModel):
@@ -209,3 +221,24 @@ class MemoryResult(FrozenModel):
     @classmethod
     def not_found(cls) -> "MemoryResult":
         return cls(status="not_found")
+
+
+class ObservationSummary(FrozenModel):
+    id: str
+    type: str = "object_seen"
+    summary: str
+    observed_at_utc: str
+    evidence_ids: tuple[str, ...] = ()
+
+
+class ToolCallRecord(FrozenModel):
+    name: str
+    status: str = "success"
+    evidence_ids: tuple[str, ...] = ()
+    detail: str | None = None
+
+
+class GroundingValidation(FrozenModel):
+    valid: bool
+    evidence_ids: tuple[str, ...] = ()
+    reason: str | None = None

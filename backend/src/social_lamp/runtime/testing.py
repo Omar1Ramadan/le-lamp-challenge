@@ -7,7 +7,12 @@ from uuid import UUID
 from uuid6 import uuid7
 
 from social_lamp.domain.clock import FakeClock
-from social_lamp.domain.contracts import BehaviorTimeline, MemoryResult, WorldSnapshot
+from social_lamp.domain.contracts import (
+    BehaviorTimeline,
+    MemoryResult,
+    ObservationSummary,
+    WorldSnapshot,
+)
 from social_lamp.memory.repository import ObservationWrite
 from social_lamp.runtime.coordinator import RuntimeCoordinator
 from social_lamp.world.model import WorldModel
@@ -27,6 +32,9 @@ class FakeSimulator:
     async def execute(self, timeline: BehaviorTimeline) -> UUID:
         self.executed.append(timeline)
         return timeline.timeline_id
+
+    def handle_ack(self, body: dict[str, object]) -> None:
+        pass
 
     async def neutralize(self) -> None:
         self.neutralized = True
@@ -68,6 +76,24 @@ class TestMemory:
     ) -> MemoryResult:
         del object_label, session_scope, before_utc
         return MemoryResult.not_found()
+
+    async def find_location(
+        self,
+        entity_label: str,
+        *,
+        session_scope: str | None = None,
+    ) -> MemoryResult:
+        del entity_label, session_scope
+        return MemoryResult.not_found()
+
+    async def list_recent_observations(
+        self,
+        *,
+        limit: int = 10,
+        before_utc: str | None = None,
+    ) -> tuple[ObservationSummary, ...]:
+        del limit, before_utc
+        return ()
 
 
 def build_test_runtime(database: Path) -> RuntimeCoordinator:

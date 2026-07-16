@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from time import monotonic_ns
 from typing import Any
 from uuid import UUID
 
 from social_lamp.api.hub import ConnectionHub
 from social_lamp.domain.contracts import BehaviorTimeline, ComponentHealth
-
 
 TIMELINE_RECEIVED_TIMEOUT_MS = 500
 FIRST_VISIBLE_TIMEOUT_MS = 1500

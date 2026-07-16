@@ -16,7 +16,7 @@ async def test_engagement_replay_reaches_simulator_adapter(tmp_path: Path) -> No
     try:
         await coordinator.replay(Path("evaluation/fixtures/core-engagement"))
         assert coordinator.world.snapshot.social_state.value == "engaged"
-        assert coordinator.simulator.executed[-1].duration_ms == 700
+        assert coordinator.simulator.executed[-1].duration_ms == 900
         assert coordinator.metrics.counter("social_transition", state="engaged") == 1
     finally:
         await coordinator.stop()

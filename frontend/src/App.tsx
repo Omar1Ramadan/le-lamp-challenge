@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 
 import "./App.css";
@@ -8,17 +8,19 @@ import { EvidenceTimeline } from "./components/EvidenceTimeline";
 import { Inspector, type InspectorEvidence } from "./components/Inspector";
 import { PerceptionPanel } from "./components/PerceptionPanel";
 import {
+  cancelEngagementCalibration,
   getHealth,
   getReplays,
   getWorld,
   runReplay,
+  startEngagementCalibration,
   startSession,
   stopSession,
   submitText,
   type ReplaySummary,
 } from "./lib/api";
 import type { VisionStatus } from "./lib/vision";
-import { connectSocket } from "./lib/socket";
+import { connectSocket, sendAck } from "./lib/socket";
 import { LampScene } from "./scene/LampScene";
 import {
   initialLampStore,
@@ -45,6 +47,7 @@ function App() {
   const [showEvidence, setShowEvidence] = useState(false);
   const [sessionRunning, setSessionRunning] = useState(true);
   const [visionStatus, setVisionStatus] = useState<VisionStatus | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
   const world = state.world;
   const pose = useMemo(
     () => poseFromTimeline(state.timeline, timelineElapsedMs),
@@ -65,6 +68,7 @@ function App() {
       .catch(() => setConnection("offline"));
 
     const socket = connectSocket((message) => dispatch(message));
+    socketRef.current = socket;
     socket.onopen = () => setConnection("connected");
     socket.onclose = () => setConnection("offline");
     setConnection("connecting");
@@ -75,21 +79,42 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!state.timeline) {
+    const currentTimeline = state.timeline;
+    if (!currentTimeline) {
       setTimelineElapsedMs(0);
       return;
     }
+
+    const socket = socketRef.current;
+    const timelineId = currentTimeline.timeline_id;
+
+    if (socket) sendAck(socket, timelineId, "timeline_received");
+
+    let firstFrameSent = false;
+    let completed = false;
     let animationFrame = 0;
     const startedAt = performance.now();
     const tick = () => {
       const elapsed = performance.now() - startedAt;
       setTimelineElapsedMs(elapsed);
-      if (elapsed < state.timeline!.duration_ms) {
-        animationFrame = window.requestAnimationFrame(tick);
+      if (!firstFrameSent) {
+        firstFrameSent = true;
+        if (socket) sendAck(socket, timelineId, "first_visible_frame");
       }
+      if (elapsed >= currentTimeline.duration_ms) {
+        completed = true;
+        if (socket) sendAck(socket, timelineId, "timeline_complete");
+        return;
+      }
+      animationFrame = window.requestAnimationFrame(tick);
     };
     animationFrame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(animationFrame);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      if (socket && !completed) {
+        sendAck(socket, timelineId, "timeline_cancelled", { reason: "replaced" });
+      }
+    };
   }, [state.timeline]);
 
   async function loadReplay(replay: ReplaySummary) {
@@ -107,6 +132,32 @@ function App() {
   async function handleSessionToggle() {
     const response = sessionRunning ? await stopSession() : await startSession();
     setSessionRunning(response.running);
+  }
+
+  async function handleStartEngagementCalibration() {
+    const calibration = await startEngagementCalibration<
+      NonNullable<DashboardWorldSnapshot["engagement_calibration"]>
+    >();
+    if (world) {
+      dispatch({
+        seq: state.lastSequence + 1,
+        type: "world_snapshot",
+        body: { ...world, engagement_calibration: calibration },
+      });
+    }
+  }
+
+  async function handleCancelEngagementCalibration() {
+    const calibration = await cancelEngagementCalibration<
+      NonNullable<DashboardWorldSnapshot["engagement_calibration"]>
+    >();
+    if (world) {
+      dispatch({
+        seq: state.lastSequence + 1,
+        type: "world_snapshot",
+        body: { ...world, engagement_calibration: calibration },
+      });
+    }
   }
 
   return (
@@ -134,9 +185,12 @@ function App() {
           health={world?.health ?? []}
           visionStatus={visionStatus}
           engagementCalibration={world?.engagement_calibration ?? null}
+          onStartEngagementCalibration={() => void handleStartEngagementCalibration()}
+          onCancelEngagementCalibration={() => void handleCancelEngagementCalibration()}
         />
         <EvidenceTimeline evidence={state.evidence} />
         <DevicePanel
+          calibrationState={world?.engagement_calibration?.state ?? null}
           onBehaviorTimeline={(timeline) => {
             dispatch({
               seq: state.lastSequence + 2,

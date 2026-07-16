@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { uploadVisionFrame } from "../lib/api";
 import type { BehaviorTimeline } from "../contracts/generated";
@@ -21,12 +21,18 @@ interface VisionDebug {
 }
 
 interface DevicePanelProps {
+  calibrationState?: string | null;
   onBehaviorTimeline?: (timeline: BehaviorTimeline) => void;
   onWorldSnapshot?: (snapshot: DashboardWorldSnapshot) => void;
   onVisionStatus?: (status: VisionStatus | null) => void;
 }
 
-export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot, onVisionStatus }: DevicePanelProps) {
+export function DevicePanel({
+  calibrationState,
+  onBehaviorTimeline,
+  onWorldSnapshot,
+  onVisionStatus,
+}: DevicePanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const uploadInFlightRef = useRef(false);
@@ -52,16 +58,6 @@ export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot, onVisionStatu
 
   useEffect(() => {
     return () => stopStream(stream);
-  }, [stream]);
-
-  useEffect(() => {
-    if (!stream) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      void sendVideoFrame();
-    }, 1000);
-    return () => window.clearInterval(timer);
   }, [stream]);
 
   async function startDevices() {
@@ -96,7 +92,7 @@ export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot, onVisionStatu
     setMessage("Camera and microphone are off.");
   }
 
-  async function sendVideoFrame() {
+  const sendVideoFrame = useCallback(async () => {
     if (uploadInFlightRef.current) {
       return;
     }
@@ -149,7 +145,19 @@ export function DevicePanel({ onBehaviorTimeline, onWorldSnapshot, onVisionStatu
     } finally {
       uploadInFlightRef.current = false;
     }
-  }
+  }, [onBehaviorTimeline, onVisionStatus, onWorldSnapshot]);
+
+  useEffect(() => {
+    if (!stream) {
+      return;
+    }
+    const frameIntervalMs = calibrationState === "calibrating" ? 50 : 1000;
+    void sendVideoFrame();
+    const timer = window.setInterval(() => {
+      void sendVideoFrame();
+    }, frameIntervalMs);
+    return () => window.clearInterval(timer);
+  }, [calibrationState, sendVideoFrame, stream]);
 
   return (
     <section className="panel device-panel" aria-label="Camera and microphone tools">
