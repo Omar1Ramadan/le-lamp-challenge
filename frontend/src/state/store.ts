@@ -1,6 +1,7 @@
 import type { LampPose, MotionChannel } from "../contracts/domain";
 import type {
   BehaviorTimeline as DashboardTimeline,
+  EvidenceEvent,
   MemoryResult,
   ObservationEvent,
   WorldSnapshot,
@@ -89,6 +90,7 @@ export interface DashboardState {
   world: DashboardWorldSnapshot | null;
   timeline: DashboardTimeline | null;
   evidence: MemoryResult[];
+  evidence_events: EvidenceEvent[];
   metrics: Record<string, number>;
   faults: FaultBody[];
   lastSequence: number;
@@ -101,12 +103,14 @@ export type ServerMessage =
   | { seq: number; type: "observation"; body: ObservationEvent }
   | { seq: number; type: "memory_result"; body: MemoryResult }
   | { seq: number; type: "metric"; body: MetricBody }
-  | { seq: number; type: "fault"; body: FaultBody };
+  | { seq: number; type: "fault"; body: FaultBody }
+  | { seq: number; type: "evidence_event"; body: EvidenceEvent };
 
 export const initialState: DashboardState = {
   world: null,
   timeline: null,
   evidence: [],
+  evidence_events: [],
   metrics: {},
   faults: [],
   lastSequence: 0,
@@ -147,5 +151,15 @@ export function reduceServerMessage(
       return { ...next, faults: [...state.faults, message.body] };
     case "observation":
       return next;
+    case "evidence_event":
+      const seen = state.evidence_events.some(
+        (e) => e.event_id === message.body.event_id,
+      );
+      if (seen) return next;
+      const events = [...state.evidence_events, message.body];
+      return {
+        ...next,
+        evidence_events: events.length > 500 ? events.slice(-500) : events,
+      };
   }
 }

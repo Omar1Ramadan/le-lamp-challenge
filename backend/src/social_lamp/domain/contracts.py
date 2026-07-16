@@ -242,3 +242,16 @@ class GroundingValidation(FrozenModel):
     valid: bool
     evidence_ids: tuple[str, ...] = ()
     reason: str | None = None
+
+
+class EvidenceEvent(FrozenModel):
+    event_id: str
+    event_type: str
+    correlation_id: str | None = None
+    occurred_at_mono_ns: int = Field(ge=0)
+    source: str = "runtime"
+    summary: str
+    severity: str = "info"
+    entity_refs: tuple[dict[str, Any], ...] = ()
+    evidence_refs: tuple[str, ...] = ()
+    metadata: dict[str, Any] = Field(default_factory=dict)

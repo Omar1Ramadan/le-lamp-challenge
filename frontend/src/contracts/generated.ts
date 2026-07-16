@@ -180,3 +180,16 @@ export interface WorldSnapshot {
   snapshot_id: SnapshotId;
   social_state: SocialState;
 }
+
+export interface EvidenceEvent {
+  event_id: string;
+  event_type: string;
+  correlation_id?: string | null;
+  occurred_at_mono_ns: number;
+  source: string;
+  summary: string;
+  severity: string;
+  entity_refs: Array<Record<string, unknown>>;
+  evidence_refs: string[];
+  metadata: Record<string, unknown>;
+}

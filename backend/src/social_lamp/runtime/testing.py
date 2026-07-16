@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from uuid6 import uuid7
@@ -94,6 +95,16 @@ class TestMemory:
     ) -> tuple[ObservationSummary, ...]:
         del limit, before_utc
         return ()
+
+
+class FakeEvidencePublisher:
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+        self.publish_count = 0
+
+    async def __call__(self, body: dict[str, Any]) -> None:
+        self.events.append(body)
+        self.publish_count += 1
 
 
 def build_test_runtime(database: Path) -> RuntimeCoordinator:
