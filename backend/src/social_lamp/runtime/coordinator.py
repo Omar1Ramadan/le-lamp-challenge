@@ -830,6 +830,18 @@ class RuntimeCoordinator:
         self.world.replace(current)
         await self._publish_snapshot(current)
 
+        if self._previous_social_state_for_event is not None and social_state != self._previous_social_state_for_event:
+            await self._emit_evidence(
+                event_type="engagement_transition",
+                summary=f"Social state: {self._previous_social_state_for_event.value} -> {social_state.value}",
+                occurred_at_mono_ns=frame.mono_ns,
+                source="runtime",
+                severity="info",
+                entity_refs=( {"kind": "person", "id": primary_person_id or "", "label": primary_person_id or "none"}, ) if primary_person_id else (),
+                metadata={"previous_state": self._previous_social_state_for_event.value, "next_state": social_state.value},
+            )
+        self._previous_social_state_for_event = social_state
+
         if current.people:
             self._policy.clear_idle_timer()
         elif self._policy.idle_since_ns is None:
