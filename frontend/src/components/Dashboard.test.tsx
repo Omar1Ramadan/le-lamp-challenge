@@ -1,7 +1,9 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { EvidenceTimeline } from "./EvidenceTimeline";
 import { Inspector } from "./Inspector";
 import { PerceptionPanel } from "./PerceptionPanel";
+import type { EvidenceEvent } from "../contracts/generated";
 
 afterEach(cleanup);
 
@@ -247,5 +249,92 @@ describe("PerceptionPanel", () => {
 
     expect(screen.getByText(/person: person-1/i)).toBeVisible();
     expect(screen.queryByText(/calibrated: person-1/i)).toBeNull();
+  });
+});
+
+describe("EvidenceTimeline with evidence events", () => {
+  it("renders engagement transition card", () => {
+    const events: EvidenceEvent[] = [
+      {
+        event_id: "evt-1",
+        event_type: "engagement_transition",
+        correlation_id: null,
+        occurred_at_mono_ns: 100,
+        source: "runtime",
+        summary: "Social state: idle -> engaged",
+        severity: "info",
+        entity_refs: [],
+        evidence_refs: [],
+        metadata: { previous_state: "idle", next_state: "engaged" },
+      },
+    ];
+    const { container } = render(
+      <EvidenceTimeline evidence={[]} evidenceEvents={events} />,
+    );
+    expect(container.textContent).toContain("ENGAGEMENT");
+    expect(container.textContent).toContain("idle -> engaged");
+  });
+
+  it("renders behavior selected card", () => {
+    const events: EvidenceEvent[] = [
+      {
+        event_id: "evt-2",
+        event_type: "behavior_selected",
+        correlation_id: null,
+        occurred_at_mono_ns: 200,
+        source: "policy",
+        summary: "Behavior: acknowledge_engagement",
+        severity: "info",
+        entity_refs: [{ kind: "behavior", id: "acknowledge_engagement", label: "acknowledge_engagement" }],
+        evidence_refs: [],
+        metadata: {},
+      },
+    ];
+    const { container } = render(
+      <EvidenceTimeline evidence={[]} evidenceEvents={events} />,
+    );
+    expect(container.textContent).toContain("acknowledge_engagement");
+  });
+
+  it("renders fault card with severity", () => {
+    const events: EvidenceEvent[] = [
+      {
+        event_id: "evt-3",
+        event_type: "fault",
+        correlation_id: null,
+        occurred_at_mono_ns: 300,
+        source: "runtime",
+        summary: "Health: camera -> degraded (no signal)",
+        severity: "error",
+        entity_refs: [{ kind: "component", id: "camera", label: "camera" }],
+        evidence_refs: [],
+        metadata: {},
+      },
+    ];
+    const { container } = render(
+      <EvidenceTimeline evidence={[]} evidenceEvents={events} />,
+    );
+    expect(container.textContent).toContain("camera");
+  });
+
+  it("handles unknown event type gracefully", () => {
+    const events: EvidenceEvent[] = [
+      {
+        event_id: "evt-4",
+        event_type: "unknown_event_type",
+        correlation_id: null,
+        occurred_at_mono_ns: 400,
+        source: "runtime",
+        summary: "Something happened",
+        severity: "info",
+        entity_refs: [],
+        evidence_refs: [],
+        metadata: {},
+      },
+    ];
+    const { container } = render(
+      <EvidenceTimeline evidence={[]} evidenceEvents={events} />,
+    );
+    expect(container.textContent).toContain("unknown_event_type");
   });
 });

@@ -153,7 +153,7 @@ function App() {
           onStartEngagementCalibration={() => void handleStartEngagementCalibration()}
           onCancelEngagementCalibration={() => void handleCancelEngagementCalibration()}
         />
-        <EvidenceTimeline evidence={state.evidence} />
+        <EvidenceTimeline evidence={state.evidence} evidenceEvents={state.evidence_events} />
         <DevicePanel
           calibrationState={world?.engagement_calibration?.state ?? null}
           onBehaviorTimeline={(timeline) => {

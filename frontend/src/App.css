@@ -234,6 +234,52 @@
   color: #facc15;
 }
 
+.evidence-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.evidence-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  align-items: baseline;
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.25rem;
+  border-left: 3px solid #555;
+  font-size: 0.8rem;
+}
+
+.evidence-card.event-error {
+  border-left-color: #e74c3c;
+}
+
+.evidence-card.event-warning {
+  border-left-color: #f39c12;
+}
+
+.evidence-card.event-info {
+  border-left-color: #3498db;
+}
+
+.event-badge {
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: #888;
+  min-width: 5rem;
+}
+
+.event-summary {
+  flex: 1;
+}
+
+.event-entities small {
+  color: #aaa;
+  margin-left: 0.25rem;
+}
+
 @media (max-width: 900px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
